@@ -45,11 +45,14 @@ jobs:
       - name: Change Gradle Wrapper Permissions
         run: chmod +x android/gradlew
 
-      # 8. Compile the Debug APK using Gradle
+      # 8. Compile the Debug APK using a globally installed Gradle instead of the broken local wrapper
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Build with Gradle
         run: |
           cd android
-          ./gradlew assembleDebug
+          gradle assembleDebug # Notice we use 'gradle' instead of './gradlew'
 
       # 9. Upload the compiled APK so you can download and test it
       - name: Upload APK Artifact
