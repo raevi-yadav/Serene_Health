@@ -65,7 +65,10 @@ export default function App() {
   const [activeDate, setActiveDate] = useState<string>('');
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [activeAppTab, setActiveAppTab] = useState<AppTab>('home');
-  const [isMobilePreviewFrame, setIsMobilePreviewFrame] = useState(true); 
+  const isNativeAndroid = Capacitor.getPlatform() === 'android';
+  const [isMobilePreviewFrame, setIsMobilePreviewFrame] = useState(() => {
+    return !isNativeAndroid;
+  });
   const [congratsType, setCongratsType] = useState<'water' | 'exercise' | null>(null);
   const [showOvereating, setShowOvereating] = useState<boolean>(false);
   const [overeatingCalories, setOvereatingCalories] = useState<number>(0);
@@ -461,34 +464,36 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'} flex flex-col items-center justify-start p-2 sm:p-6 transition-all`}>
+    <div className={`min-h-screen ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'} flex flex-col items-center justify-start ${isNativeAndroid ? 'p-0' : 'p-2 sm:p-6'} transition-all`}>
       
       {/* Visual Workspace Controller: smartphone simulator vs full fluid responsive width */}
-      <div id="device-view-selector" className="mb-4 flex items-center gap-2 bg-white/80 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm z-10 text-xs text-slate-500 dark:text-slate-400 font-medium font-sans">
-        <span className="pl-2 font-mono text-slate-400 dark:text-slate-500">Viewport Layout:</span>
-        <button
-          id="toggle-view-mobile"
-          type="button"
-          onClick={() => setIsMobilePreviewFrame(true)}
-          className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition ${
-            isMobilePreviewFrame ? 'bg-indigo-50 dark:bg-indigo-950/55 text-indigo-600 dark:text-indigo-400 font-bold' : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Smartphone className="w-3.5 h-3.5" />
-          Mobile Phone Frame
-        </button>
-        <button
-          id="toggle-view-desktop"
-          type="button"
-          onClick={() => setIsMobilePreviewFrame(false)}
-          className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition ${
-            !isMobilePreviewFrame ? 'bg-indigo-50 dark:bg-indigo-950/55 text-indigo-600 dark:text-indigo-400 font-bold' : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-          }`}
-        >
-          <Expand className="w-3.5 h-3.5" />
-          Fluid Fit Desktop
-        </button>
-      </div>
+      {!isNativeAndroid && (
+        <div id="device-view-selector" className="mb-4 flex items-center gap-2 bg-white/80 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm z-10 text-xs text-slate-500 dark:text-slate-400 font-medium font-sans">
+          <span className="pl-2 font-mono text-slate-400 dark:text-slate-500">Viewport Layout:</span>
+          <button
+            id="toggle-view-mobile"
+            type="button"
+            onClick={() => setIsMobilePreviewFrame(true)}
+            className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition ${
+              isMobilePreviewFrame ? 'bg-indigo-50 dark:bg-indigo-950/55 text-indigo-600 dark:text-indigo-400 font-bold' : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            Mobile Phone Frame
+          </button>
+          <button
+            id="toggle-view-desktop"
+            type="button"
+            onClick={() => setIsMobilePreviewFrame(false)}
+            className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition ${
+              !isMobilePreviewFrame ? 'bg-indigo-50 dark:bg-indigo-950/55 text-indigo-600 dark:text-indigo-400 font-bold' : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Expand className="w-3.5 h-3.5" />
+            Fluid Fit Desktop
+          </button>
+        </div>
+      )}
 
       {/* Frame wrapper */}
       <div
@@ -496,11 +501,11 @@ export default function App() {
         className={`w-full transition-all duration-500 relative flex flex-col ${
           isMobilePreviewFrame
             ? 'max-w-[430px] h-[880px] border-[10px] border-slate-800/90 dark:border-slate-800 rounded-[44px] shadow-nordic dark:shadow-none bg-slate-50 dark:bg-slate-900 sticky top-2 overflow-hidden'
-            : 'max-w-4xl pb-24'
+            : (isNativeAndroid ? 'min-h-screen pb-24 w-full' : 'max-w-4xl pb-24')
         }`}
       >
-        {/* Android status bar mock if in Mobile Mode */}
-        {isMobilePreviewFrame && (
+        {/* Android status bar mock if in Mobile Mode (never shown on native Android) */}
+        {isMobilePreviewFrame && !isNativeAndroid && (
           <div id="android-status-bar" className="bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur px-6 py-2.5 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 sticky top-0 z-50 border-b border-slate-200/50 dark:border-slate-800/60 selection-none">
             <div className="flex items-center gap-1.5 select-none">
               <Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
@@ -1184,7 +1189,7 @@ export default function App() {
         <nav
           id="app-bottom-tab-bar"
           className={`sticky bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800/90 py-3.5 px-6 flex justify-around items-center z-40 shadow-[0_-8px_24px_rgba(15,23,42,0.02)] selection-none ${
-            isMobilePreviewFrame ? 'rounded-b-[34px]' : 'lg:rounded-2xl'
+            isMobilePreviewFrame ? 'rounded-b-[34px]' : (isNativeAndroid ? 'rounded-none' : 'lg:rounded-2xl')
           }`}
         >
           {/* Home button */}
