@@ -60,4 +60,5 @@ export interface UserSettings {
   targetWeightKg?: number;
   targetExerciseDaysPerWeek?: number;
   heightCm?: number;
+  enableHealthConnectAutoSync?: boolean;
 }

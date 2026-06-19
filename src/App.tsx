@@ -22,6 +22,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { DailyRecord, UserSettings } from './types';
+import { Capacitor } from '@capacitor/core';
+import { HealthConnectService } from './services/healthConnectService';
 import {
   getTodayDateString,
   getPastWeekDates,
@@ -72,6 +74,19 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     const stored = localStorage.getItem('serene_health_dark_theme');
     return stored === 'true';
+  });
+
+  // Health Connect Auto-sync states
+  const [healthSyncMessage, setHealthSyncMessage] = useState<string>('');
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncedSteps, setSyncedSteps] = useState<number>(() => {
+    return Number(localStorage.getItem('serene_health_synced_steps') || '0');
+  });
+  const [syncedCalories, setSyncedCalories] = useState<number>(() => {
+    return Number(localStorage.getItem('serene_health_synced_calories') || '0');
+  });
+  const [lastSyncedTime, setLastSyncedTime] = useState<string>(() => {
+    return localStorage.getItem('serene_health_last_synced_time') || '';
   });
 
   const toggleTheme = () => {
@@ -243,6 +258,89 @@ export default function App() {
       saveRecords(updated);
     }
   };
+
+  // Health Connect Auto-Sync synchronization engine
+  const syncHealthMetrics = async () => {
+    if (!settings.enableHealthConnectAutoSync) return;
+
+    setIsSyncing(true);
+    try {
+      const res = await HealthConnectService.syncTodayMetrics(activeDate);
+      if (res.status.success && res.data) {
+        setSyncedSteps(res.data.steps);
+        setSyncedCalories(res.data.calories);
+        const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        setLastSyncedTime(timeNow);
+        
+        localStorage.setItem('serene_health_synced_steps', String(res.data.steps));
+        localStorage.setItem('serene_health_synced_calories', String(res.data.calories));
+        localStorage.setItem('serene_health_last_synced_time', timeNow);
+      } else {
+        if (Capacitor.getPlatform() !== 'android') {
+          // Web preview simulator
+          const baseSteps = 8240;
+          const bounce = Math.floor(Math.sin(Date.now() / 15000) * 200) + Math.floor((Date.now() % 400) / 8);
+          const simulatedSteps = baseSteps + bounce;
+          const simulatedCalories = Math.round((simulatedSteps * 0.04) * 10) / 10;
+          
+          setSyncedSteps(simulatedSteps);
+          setSyncedCalories(simulatedCalories);
+          const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          setLastSyncedTime(timeNow);
+          
+          localStorage.setItem('serene_health_synced_steps', String(simulatedSteps));
+          localStorage.setItem('serene_health_synced_calories', String(simulatedCalories));
+          localStorage.setItem('serene_health_last_synced_time', timeNow);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to sync metrics', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleToggleAutoSync = async () => {
+    const nextVal = !settings.enableHealthConnectAutoSync;
+    if (nextVal) {
+      setHealthSyncMessage('Requesting Health Connect permissions...');
+      try {
+        const res = await HealthConnectService.ensurePermissions();
+        if (res.success) {
+          saveSettings({ ...settings, enableHealthConnectAutoSync: true });
+          setHealthSyncMessage('Health Connect Auto-Sync is successfully enabled! Live syncing is active.');
+          setTimeout(() => {
+            syncHealthMetrics();
+          }, 300);
+        } else if (res.code === 'NOT_ANDROID') {
+          // On Web previews, allow enabling simulator auto-sync
+          saveSettings({ ...settings, enableHealthConnectAutoSync: true });
+          setHealthSyncMessage('Web Simulator: Auto-sync is enabled. Mock sensor feeds are running.');
+          setTimeout(() => {
+            syncHealthMetrics();
+          }, 300);
+        } else {
+          setHealthSyncMessage(`Sync not enabled: ${res.message}`);
+        }
+      } catch (error: any) {
+        setHealthSyncMessage(`Inquiry failed: ${error?.message || 'Access error'}`);
+      }
+    } else {
+      saveSettings({ ...settings, enableHealthConnectAutoSync: false });
+      setHealthSyncMessage('');
+    }
+  };
+
+  // Trigger auto sync when tab is selected or activeDate changes if enabled
+  useEffect(() => {
+    if (settings.enableHealthConnectAutoSync) {
+      syncHealthMetrics();
+      const interval = setInterval(() => {
+        syncHealthMetrics();
+      }, 10000); // sync every 10s
+      return () => clearInterval(interval);
+    }
+  }, [settings.enableHealthConnectAutoSync, activeAppTab, activeDate]);
 
   // Profile actions
   const handleImportBackup = (newData: Record<string, DailyRecord>, newSettings?: UserSettings) => {
@@ -791,6 +889,12 @@ export default function App() {
                 record={currentRecord.exercise}
                 onChange={handleExerciseChange}
                 targetMinutes={settings.targetExerciseMinutes}
+                enableHealthConnectAutoSync={settings.enableHealthConnectAutoSync}
+                isSyncing={isSyncing}
+                syncedSteps={syncedSteps}
+                syncedCalories={syncedCalories}
+                lastSyncedTime={lastSyncedTime}
+                onRefreshSync={syncHealthMetrics}
               />
 
               {/* Sleep Log */}
@@ -1009,6 +1113,51 @@ export default function App() {
                     </div>
                   </div>
 
+                </div>
+              </div>
+
+              {/* Integrations Section */}
+              <div className="bg-white/75 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/85 p-5 rounded-3xl shadow-subtle dark:shadow-none space-y-4">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-teal-50 dark:bg-teal-950/40 border border-teal-100 dark:border-teal-900/50 text-teal-600 dark:text-teal-400 rounded-xl">
+                    <Smartphone className="w-4.5 h-4.5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100">
+                      Wearable & Direct Integrations
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="space-y-4 pt-1">
+                  <div className="flex items-center justify-between p-3.5 bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/80 rounded-2xl">
+                    <div className="space-y-1 pr-4">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200 block">
+                        Enable Health Connect Auto-Sync
+                      </span>
+                      <span className="text-[10px] text-slate-450 dark:text-slate-500 leading-relaxed block">
+                        Automatically sync walking and jogging steps and calories directly from Android Health Connect sensors safely and privately.
+                      </span>
+                    </div>
+
+                    <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
+                      <input
+                        id="toggle-health-connect-sync"
+                        type="checkbox"
+                        checked={!!settings.enableHealthConnectAutoSync}
+                        onChange={handleToggleAutoSync}
+                        className="sr-only peer"
+                      />
+                      <div className="w-[42px] h-[24px] bg-slate-200 dark:bg-slate-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-slate-600 peer-checked:bg-teal-500" />
+                    </label>
+                  </div>
+
+                  {healthSyncMessage && (
+                    <div className="flex items-start gap-2 p-3 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100/50 dark:border-indigo-900/30 rounded-2xl text-[10px] text-indigo-600 dark:text-indigo-400">
+                      <Sparkles className="w-4 h-4 shrink-0" />
+                      <span className="font-medium leading-relaxed">{healthSyncMessage}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -1,0 +1,8 @@
+{
+	"appId": "com.serene.healthtracker",
+	"appName": "Serene Health Tracker",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	}
+}

@@ -2,53 +2,59 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ main, master ] # Triggers the build whenever you push to main
   pull_request:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
+    branches: [ main, master ]
 
 jobs:
   build:
-    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Source Code
+      # 1. Checkout the source code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Java JDK 17
+      # 2. Set up Java Environment (Required for Android Gradle Build)
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
           distribution: 'zulu'
+          java-version: '17'
 
+      # 3. Set up Node.js v22 (Fixes your Capacitor CLI version constraint error!)
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
           cache: 'npm'
 
-      - name: Install Node Dependencies
-        run: npm ci || npm install
+      # 4. Install Frontend Dependencies
+      - name: Install Dependencies
+        run: npm install
 
+      # 5. Build Web Project (Compiles your React/Tailwind frontend layout changes)
       - name: Build Web Application
         run: npm run build
 
-      - name: Initialize Android Platform and Sync
-        run: |
-          npx cap add android || true
-          npx cap sync android
+      # 6. Sync Assets into the Native Android Project
+      - name: Capacitor Sync
+        run: npx cap sync android
 
-      - name: Configure Gradle Execution Permission
+      # 7. Grant Execute Permissions to the Gradle Wrapper
+      - name: Change Gradle Wrapper Permissions
         run: chmod +x android/gradlew
 
-      - name: Build Android Debug APK
+      # 8. Compile the Debug APK using Gradle
+      - name: Build with Gradle
         run: |
           cd android
           ./gradlew assembleDebug
 
+      # 9. Upload the compiled APK so you can download and test it
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: serene-health-debug-apk
+          name: app-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7 # Kept for 7 days before auto-deleting

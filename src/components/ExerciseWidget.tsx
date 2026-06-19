@@ -8,9 +8,25 @@ interface ExerciseWidgetProps {
   record: ExerciseRecord;
   onChange: (updates: Partial<ExerciseRecord>) => void;
   targetMinutes: number;
+  enableHealthConnectAutoSync?: boolean;
+  isSyncing?: boolean;
+  syncedSteps?: number;
+  syncedCalories?: number;
+  lastSyncedTime?: string;
+  onRefreshSync?: () => void;
 }
 
-export default function ExerciseWidget({ record, onChange, targetMinutes }: ExerciseWidgetProps) {
+export default function ExerciseWidget({
+  record,
+  onChange,
+  targetMinutes,
+  enableHealthConnectAutoSync,
+  isSyncing,
+  syncedSteps,
+  syncedCalories,
+  lastSyncedTime,
+  onRefreshSync
+}: ExerciseWidgetProps) {
   // Timer State
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -228,6 +244,67 @@ export default function ExerciseWidget({ record, onChange, targetMinutes }: Exer
             <span className="text-[10px] text-slate-400 dark:text-slate-500 pr-1.5 font-sans">m</span>
           </div>
         </div>
+
+        {/* Health Connect Sync Status Card */}
+        {enableHealthConnectAutoSync && (
+          <div className="bg-gradient-to-r from-emerald-500/5 to-teal-500/5 dark:from-emerald-950/10 dark:to-teal-950/10 border border-emerald-100/60 dark:border-emerald-900/30 rounded-2xl p-3.5 space-y-2.5 animate-in fade-in duration-300">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 ${isSyncing ? 'duration-500' : ''}`}></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                  Health Connect Synced
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {isSyncing ? (
+                  <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 animate-pulse">Syncing...</span>
+                ) : (
+                  <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
+                    {lastSyncedTime ? `Updated ${lastSyncedTime}` : 'Active'}
+                  </span>
+                )}
+                {onRefreshSync && (
+                  <button
+                    type="button"
+                    onClick={onRefreshSync}
+                    disabled={isSyncing}
+                    className={`text-slate-400 hover:text-teal-500 transition-colors p-0.5 rounded ${isSyncing ? 'animate-spin' : ''}`}
+                    title="Manual Refresh"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                      <path d="M3 3v5h5" />
+                      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                      <path d="M16 16h5v5" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3.5 bg-white/50 dark:bg-slate-950/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-900">
+              <div className="space-y-0.5">
+                <span className="text-[8px] font-mono text-slate-400 dark:text-slate-500 uppercase block font-bold">Steps Sync</span>
+                <span className="text-sm font-mono font-black text-slate-700 dark:text-slate-200">
+                  {syncedSteps?.toLocaleString() || 0} <span className="text-[9px] font-mono font-normal text-slate-400 dark:text-slate-500">steps</span>
+                </span>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-[8px] font-mono text-slate-400 dark:text-slate-500 uppercase block font-bold">Burned Active</span>
+                <span className="text-sm font-mono font-black text-slate-700 dark:text-slate-200">
+                  {syncedCalories || 0} <span className="text-[9px] font-mono font-normal text-slate-400 dark:text-slate-500">kcal</span>
+                </span>
+              </div>
+            </div>
+            
+            <div className="text-[9px] text-slate-450 dark:text-slate-500 font-sans leading-relaxed text-center italic border-t border-slate-100 dark:border-slate-800/50 pt-1.5">
+              Live wearable activity stream is operational-ready.
+            </div>
+          </div>
+        )}
 
         {/* ACTIVE WORKOUT CHRONOMETER WIDGET */}
         <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl p-4 border border-slate-200/50 dark:border-slate-800 mt-3 relative overflow-hidden">

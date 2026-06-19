@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Serene Health Tracker</string>
+    <string name="title_activity_main">Serene Health Tracker</string>
+    <string name="package_name">com.serene.healthtracker</string>
+    <string name="custom_url_scheme">com.serene.healthtracker</string>
+</resources>
