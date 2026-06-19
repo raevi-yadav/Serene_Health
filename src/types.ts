@@ -11,6 +11,7 @@ export interface Meal {
   potassium?: number; // in mg
   fiber?: number;   // in grams
   sugar?: number;   // in grams
+  weightGrams?: number; // weight in grams
 }
 
 export interface SleepRecord {

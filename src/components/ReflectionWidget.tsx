@@ -50,7 +50,7 @@ export default function ReflectionWidget({ reflection, onSave }: ReflectionWidge
         )}
       </div>
       
-      <div className="p-4 bg-white dark:bg-slate-905 border border-slate-205 dark:border-slate-800/80 rounded-2xl space-y-3 shadow-sm">
+      <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl space-y-3 shadow-sm">
         <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
           Jot down a quick thought about your mood, energy levels, or focus today:
         </p>
@@ -59,10 +59,10 @@ export default function ReflectionWidget({ reflection, onSave }: ReflectionWidge
             id="daily-reflection-input"
             type="text"
             maxLength={120}
-            placeholder="e.g., Felt super energetic after my workout! 🌱"
+            placeholder="Felt super energetic after my workout! 🌱"
             value={localVal}
             onChange={(e) => handleChange(e.target.value)}
-            className="w-full pl-3.5 pr-16 py-2.5 text-xs bg-slate-50/60 dark:bg-slate-850/50 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600 transition"
+            className="w-full pl-3.5 pr-16 py-2.5 text-xs bg-slate-50/60 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-500 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600 transition"
           />
           <div className="absolute right-3.5 text-[9px] font-mono text-slate-450 dark:text-slate-500 pointer-events-none select-none">
             {localVal.length}/120

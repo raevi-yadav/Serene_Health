@@ -6,10 +6,11 @@ import { triggerHaptic } from '../utils/haptic';
 interface WeightWidgetProps {
   record: WeightRecord;
   onChange: (updates: Partial<WeightRecord>) => void;
+  assumedWeight?: number | null;
 }
 
-export default function WeightWidget({ record, onChange }: WeightWidgetProps) {
-  const currentWeight = record.kg ?? 70.0;
+export default function WeightWidget({ record, onChange, assumedWeight }: WeightWidgetProps) {
+  const currentWeight = record.kg ?? assumedWeight ?? 70.0;
 
   const handleWeightChange = (newVal: number) => {
     // Round to 1 decimal place
@@ -27,8 +28,8 @@ export default function WeightWidget({ record, onChange }: WeightWidgetProps) {
       id="weight-metric"
       title="Body Weight"
       icon={<Scale className="w-5 h-5" />}
-      value={record.kg !== null ? `${record.kg} kg` : '-- kg'}
-      subtitle={record.kg === null ? 'Not logged today' : 'Logged today'}
+      value={record.kg !== null ? `${record.kg} kg` : (assumedWeight ? `${assumedWeight} kg` : '-- kg')}
+      subtitle={record.kg === null ? (assumedWeight ? 'Last recorded' : 'Not logged today') : 'Logged today'}
       accentColor="text-emerald-500"
     >
       <div className="space-y-4">
@@ -41,10 +42,11 @@ export default function WeightWidget({ record, onChange }: WeightWidgetProps) {
             <input
               id="weight-input"
               type="number"
+              inputMode="decimal"
               step="0.1"
               min="20"
               max="300"
-              placeholder="e.g. 72.5"
+              placeholder={record.kg !== null ? `${record.kg} kg` : (assumedWeight ? `${assumedWeight} kg` : '-- kg')}
               value={record.kg ?? ''}
               onChange={(e) => {
                 const val = e.target.value;

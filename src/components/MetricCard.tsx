@@ -22,7 +22,7 @@ export default function MetricCard({
   return (
     <div
       id={id}
-      className="bg-white/75 dark:bg-slate-900/85 backdrop-blur-md border border-slate-200/80 dark:border-slate-850 rounded-2xl p-6 transition-all duration-300 hover:shadow-subtle hover:border-slate-300 dark:hover:border-slate-700"
+      className="bg-white/75 dark:bg-slate-900/85 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 transition-all duration-300 hover:shadow-subtle hover:border-slate-300 dark:hover:border-slate-700"
     >
       <div className="flex items-start justify-between mb-4">
         <div>

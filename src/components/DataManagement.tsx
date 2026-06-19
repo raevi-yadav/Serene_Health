@@ -1,15 +1,16 @@
 import { useState, useRef, ChangeEvent } from 'react';
 import { FileJson, Download, Upload, Trash2, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
-import { DailyRecord } from '../types';
+import { DailyRecord, UserSettings } from '../types';
 
 interface DataManagementProps {
-  onImport: (newData: Record<string, DailyRecord>) => void;
+  onImport: (newData: Record<string, DailyRecord>, newSettings?: UserSettings) => void;
   onClear: () => void;
   onResetSample: () => void;
   allRecords: Record<string, DailyRecord>;
+  settings: UserSettings;
 }
 
-export default function DataManagement({ onImport, onClear, onResetSample, allRecords }: DataManagementProps) {
+export default function DataManagement({ onImport, onClear, onResetSample, allRecords, settings }: DataManagementProps) {
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({
     type: null,
     message: '',
@@ -18,7 +19,12 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
 
   const handleExport = () => {
     try {
-      const dataStr = JSON.stringify(allRecords, null, 2);
+      const backupData = {
+        version: '2.0',
+        settings: settings,
+        records: allRecords,
+      };
+      const dataStr = JSON.stringify(backupData, null, 2);
       const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
 
       const exportFileDefaultName = `serene_health_backup_${new Date().toISOString().slice(0, 10)}.json`;
@@ -28,7 +34,7 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
       linkElement.setAttribute('download', exportFileDefaultName);
       linkElement.click();
 
-      showStatus('success', 'Your health records exported successfully.');
+      showStatus('success', 'Your health records and profile goals exported successfully.');
     } catch (e: any) {
       showStatus('error', `Failed to export files: ${e?.message || 'Unknown error'}`);
     }
@@ -45,21 +51,35 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
         
         // Simple schema validation
         if (typeof parsed !== 'object' || parsed === null) {
-          throw new Error('Invalid JSON format. Expected key-value records.');
+          throw new Error('Invalid JSON format. Expected key-value records or backup package.');
         }
 
-        const keys = Object.keys(parsed);
+        let recordsToImport: Record<string, DailyRecord> = {};
+        let settingsToImport: UserSettings | undefined = undefined;
+
+        // Check if new wrapper format with 'records' key
+        if ('records' in parsed && typeof parsed.records === 'object' && parsed.records !== null) {
+          recordsToImport = parsed.records;
+          if ('settings' in parsed && typeof parsed.settings === 'object' && parsed.settings !== null) {
+            settingsToImport = parsed.settings;
+          }
+        } else {
+          // Backward compatibility: old format is a raw Record<string, DailyRecord>
+          recordsToImport = parsed;
+        }
+
+        const keys = Object.keys(recordsToImport);
         if (keys.length > 0) {
           // Check structure of first key-value pair if elements exist
           const sampleKey = keys[0];
-          const sampleRecord = parsed[sampleKey];
+          const sampleRecord = recordsToImport[sampleKey];
           if (!sampleRecord.date || !sampleRecord.sleep || !sampleRecord.water || !sampleRecord.diet) {
             throw new Error('JSON structure does not match daily health records format.');
           }
         }
 
-        onImport(parsed);
-        showStatus('success', `Imported ${keys.length} daily health records successfully.`);
+        onImport(recordsToImport, settingsToImport);
+        showStatus('success', `Imported ${keys.length} daily wellness logs and custom profile goals successfully.`);
         if (fileInputRef.current) fileInputRef.current.value = '';
       } catch (err: any) {
         showStatus('error', `Import failed: ${err.message || 'Check backup file structure'}`);
@@ -84,7 +104,7 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
   return (
     <div
       id="data-man-container"
-      className="bg-white/75 dark:bg-slate-900/85 backdrop-blur-md border border-slate-200/80 dark:border-slate-850 rounded-3xl p-6 shadow-subtle dark:shadow-none flex flex-col gap-5"
+      className="bg-white/75 dark:bg-slate-900/85 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 shadow-subtle dark:shadow-none flex flex-col gap-5"
     >
       <div>
         <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-bold block">
@@ -95,7 +115,7 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
           Backup, Export & Data Management
         </h3>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-          Your metric records are saved completely inside your device storage. You are in full possession of your health stats. Secure your logs using manual backup files.
+          Your metric records are saved completely inside your device storage. Secure your logs using manual backup files.
         </p>
       </div>
 
@@ -120,7 +140,7 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
       {/* Grid of Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Core Import/Export container */}
-        <div className="space-y-3 p-4 bg-slate-50/50 dark:bg-slate-800/20 rounded-2xl border border-slate-150/40 dark:border-slate-800">
+        <div className="space-y-3 p-4 bg-slate-50/50 dark:bg-slate-800/20 rounded-2xl border border-slate-200/40 dark:border-slate-800">
           <span className="text-[10px] uppercase font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
             Transfer Health Data
           </span>
@@ -132,7 +152,7 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
               className="flex-1 py-2 px-3 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
             >
               <Download className="w-4 h-4 text-slate-500" />
-              <span>Export Backup (.json)</span>
+              <span>Export Backup</span>
             </button>
 
             <button
@@ -156,7 +176,7 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
         </div>
 
         {/* Database state management */}
-        <div className="space-y-3 p-4 bg-slate-50/50 dark:bg-slate-800/20 rounded-2xl border border-slate-150/40 dark:border-slate-800">
+        <div className="space-y-3 p-4 bg-slate-50/50 dark:bg-slate-800/20 rounded-2xl border border-slate-200/40 dark:border-slate-800">
           <span className="text-[10px] uppercase font-mono font-bold text-slate-400 dark:text-slate-500 tracking-wider">
             Diagnostics & Sandbox
           </span>

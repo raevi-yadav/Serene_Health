@@ -33,7 +33,7 @@ export default function ReflectionJournal({ records, onClearReflection }: Reflec
   };
 
   return (
-    <div id="reflection-journal-card" className="bg-white/75 dark:bg-slate-905/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-805/85 p-5 rounded-3xl shadow-subtle dark:shadow-none space-y-4">
+    <div id="reflection-journal-card" className="bg-white/75 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/85 p-5 rounded-3xl shadow-subtle dark:shadow-none space-y-4">
       {/* Card Header & Format Select Toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -45,7 +45,7 @@ export default function ReflectionJournal({ records, onClearReflection }: Reflec
               Daily Reflections Journal
             </h3>
             <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono block uppercase">
-              Chronological log of your mindful thoughts
+              Chronological log of your thoughts
             </span>
           </div>
         </div>
@@ -58,10 +58,10 @@ export default function ReflectionJournal({ records, onClearReflection }: Reflec
           className={`py-1.5 px-3 rounded-xl border text-[11px] font-semibold flex items-center gap-1.5 transition ${
             showJournal
               ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-              : 'bg-slate-50/50 dark:bg-slate-900/50 border-slate-150 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              : 'bg-slate-50/50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
-          {showJournal ? 'Journal Format: Active' : 'Show Journal Format'}
+          {showJournal ? 'Hide Journal' : 'Show Journal'}
         </button>
       </div>
 
@@ -76,12 +76,12 @@ export default function ReflectionJournal({ records, onClearReflection }: Reflec
               placeholder="Search thoughts & moods..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8.5 pr-3.5 py-1.5 text-xs bg-slate-50/60 dark:bg-slate-850/50 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 text-slate-800 dark:text-slate-100"
+              className="w-full pl-8.5 pr-3.5 py-1.5 text-xs bg-slate-50/60 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800/50 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300 text-slate-800 dark:text-slate-100"
             />
           </div>
 
           {entries.length === 0 ? (
-            <div className="text-center py-6 px-4 bg-slate-50/30 dark:bg-slate-850/10 border border-dashed border-slate-150 dark:border-slate-800 rounded-2xl">
+            <div className="text-center py-6 px-4 bg-slate-50/30 dark:bg-slate-800/10 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
               <span className="text-slate-400 dark:text-slate-600 block text-xs">
                 No reflections recorded yet.
               </span>
@@ -101,7 +101,7 @@ export default function ReflectionJournal({ records, onClearReflection }: Reflec
                 <div
                   id={`journal-row-${date}`}
                   key={date}
-                  className="group relative p-4 bg-white dark:bg-slate-905 border border-slate-205 dark:border-slate-800/60 rounded-2xl transition hover:border-indigo-100/80 dark:hover:border-indigo-900/40 hover:shadow-subtle"
+                  className="group relative p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/60 rounded-2xl transition hover:border-indigo-100/80 dark:hover:border-indigo-900/40 hover:shadow-subtle"
                 >
                   {/* Top line with Date Label */}
                   <div className="flex items-center justify-between mb-2">
@@ -128,7 +128,7 @@ export default function ReflectionJournal({ records, onClearReflection }: Reflec
                   {/* Reflection Text with Quotations Styling */}
                   <div className="flex gap-2 items-start">
                     <Quote className="w-4 h-4 text-indigo-300 dark:text-indigo-805/50 flex-shrink-0 rotate-180 mt-0.5" />
-                    <p className="text-xs text-slate-650 dark:text-slate-200 leading-relaxed font-sans italic selection:bg-indigo-100 dark:selection:bg-indigo-950">
+                    <p className="text-xs text-slate-600 dark:text-slate-200 leading-relaxed font-sans italic selection:bg-indigo-100 dark:selection:bg-indigo-950">
                       {reflection}
                     </p>
                   </div>

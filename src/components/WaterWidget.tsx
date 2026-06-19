@@ -85,7 +85,7 @@ export default function WaterWidget({ record, onChange, targetWaterMl }: WaterWi
             id="reset-water"
             type="button"
             onClick={resetWater}
-            className="py-2.5 px-2.5 text-[10px] font-mono text-slate-400 dark:text-slate-500 hover:text-slate-650 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl transition"
+            className="py-2.5 px-2.5 text-[10px] font-mono text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl transition"
           >
             Reset
           </button>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Activity, Play, Pause, RotateCcw, Plus, Check } from 'lucide-react';
+import { Activity, Play, Pause, RotateCcw, Plus, Check, ChevronDown } from 'lucide-react';
 import { ExerciseRecord, ExerciseIntensity } from '../types';
 import MetricCard from './MetricCard';
 import { triggerHaptic } from '../utils/haptic';
@@ -15,6 +15,22 @@ export default function ExerciseWidget({ record, onChange, targetMinutes }: Exer
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Dropdown UI states
+  const [workoutDropdownOpen, setWorkoutDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setWorkoutDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     if (timerRunning) {
@@ -96,7 +112,7 @@ export default function ExerciseWidget({ record, onChange, targetMinutes }: Exer
               style={{ width: `${percentage}%` }}
             />
           </div>
-          <div className="flex justify-between text-[10px] text-slate-400 dark:text-slate-550 mt-1 uppercase tracking-tight font-mono">
+          <div className="flex justify-between text-[10px] text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-tight font-mono">
             <span>{percentage}% of daily goal</span>
             <span>{targetMinutes - record.durationMinutes > 0 ? `${targetMinutes - record.durationMinutes} min left` : 'Goal met'}</span>
           </div>
@@ -104,18 +120,50 @@ export default function ExerciseWidget({ record, onChange, targetMinutes }: Exer
 
         {/* Direct log edit */}
         <div className="grid grid-cols-2 gap-3 pt-1">
-          <div>
+          <div className="relative" ref={dropdownRef}>
             <label className="text-[10px] font-mono text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-1">Workout Type</label>
-            <select
-              id="exercise-type-select"
-              value={record.type}
-              onChange={(e) => onChange({ type: e.target.value })}
-              className="w-full p-2 text-xs border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-100/50 focus:border-teal-400 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800"
+            <button
+              id="exercise-type-dropdown-btn"
+              type="button"
+              onClick={() => {
+                triggerHaptic(10);
+                setWorkoutDropdownOpen(!workoutDropdownOpen);
+              }}
+              className="flex items-center justify-between w-full p-2 text-xs border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-100/50 focus:border-teal-400 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:border-slate-350 dark:hover:border-slate-700 transition font-medium"
             >
-              {exerciseTypes.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
+              <span>{record.type}</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${workoutDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {workoutDropdownOpen && (
+              <div 
+                id="exercise-type-dropdown-menu"
+                className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl max-h-48 overflow-y-auto p-1 space-y-0.5 animate-in fade-in slide-in-from-top-2 duration-150"
+              >
+                {exerciseTypes.map((type) => {
+                  const isSelected = record.type === type;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic(12);
+                        onChange({ type });
+                        setWorkoutDropdownOpen(false);
+                      }}
+                      className={`flex items-center justify-between w-full px-3 py-1.5 text-xs rounded-xl text-left transition-all ${
+                        isSelected
+                          ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 font-bold'
+                          : 'text-slate-650 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <span>{type}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div>
             <label className="text-[10px] font-mono text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-1">Intensity</label>
@@ -167,6 +215,7 @@ export default function ExerciseWidget({ record, onChange, targetMinutes }: Exer
             <input
               id="exercise-direct-input"
               type="number"
+              inputMode="numeric"
               min="0"
               placeholder="0"
               value={record.durationMinutes || ''}
@@ -181,7 +230,7 @@ export default function ExerciseWidget({ record, onChange, targetMinutes }: Exer
         </div>
 
         {/* ACTIVE WORKOUT CHRONOMETER WIDGET */}
-        <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl p-4 border border-slate-200/50 dark:border-slate-850 mt-3 relative overflow-hidden">
+        <div className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl p-4 border border-slate-200/50 dark:border-slate-800 mt-3 relative overflow-hidden">
           {/* subtle decorative pulse if timer running */}
           {timerRunning && (
             <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
@@ -191,7 +240,7 @@ export default function ExerciseWidget({ record, onChange, targetMinutes }: Exer
           </span>
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
-              <span id="timer-display" className="text-2xl font-mono font-bold text-slate-800 dark:text-slate-105 tracking-tight">
+              <span id="timer-display" className="text-2xl font-mono font-bold text-slate-800 dark:text-slate-100 tracking-tight">
                 {formatTimerValue()}
               </span>
               <span className="text-[10px] text-slate-400 dark:text-slate-500">

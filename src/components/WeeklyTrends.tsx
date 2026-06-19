@@ -82,16 +82,12 @@ export default function WeeklyTrends({
   return (
     <div
       id="trends-container"
-      className="bg-white/75 dark:bg-slate-900/85 backdrop-blur-md border border-slate-200/80 dark:border-slate-850 rounded-3xl p-6 shadow-subtle dark:shadow-none flex flex-col gap-6"
+      className="bg-white/75 dark:bg-slate-900/85 backdrop-blur-md border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 shadow-subtle dark:shadow-none flex flex-col gap-6"
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-bold block">
-            Weekly Insights
-          </span>
-          <h2 className="text-xl font-sans font-semibold tracking-tight text-slate-800 dark:text-slate-100 mt-1 flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-teal-500" />
-            Trends & Daily Snapshot
+          <h2 className="text-xl font-sans tracking-tight text-emerald-400 font-bold dark:text-emerald-400 mt-1 flex items-center gap-2">
+            Weekly Insights & Trends
           </h2>
         </div>
 
@@ -208,12 +204,12 @@ export default function WeeklyTrends({
       </div>
 
       {/* Main Tab Render Panel */}
-      <div className="min-h-72 text-slate-705 dark:text-slate-300">
+      <div className="min-h-72 text-slate-700 dark:text-slate-300">
         {activeTab === 'summary' && (
           <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/40">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-50 dark:bg-slate-850/60 border-b border-slate-100 dark:border-slate-800 text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400 dark:text-slate-500">
+                <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400 dark:text-slate-500">
                   <th className="py-3 px-4">Day</th>
                   <th className="py-3 px-4">Sleep</th>
                   <th className="py-3 px-4">Diet</th>
@@ -227,10 +223,10 @@ export default function WeeklyTrends({
                   const label = formatDayOfWeek(r.date);
                   return (
                     <tr key={r.date} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition">
-                      <td className="py-3.5 px-4 font-sans font-medium text-slate-700 dark:text-slate-205">{label}</td>
+                      <td className="py-3.5 px-4 font-sans font-medium text-slate-700 dark:text-slate-200">{label}</td>
                       <td className="py-3.5 px-4">
                         <div className="flex flex-col">
-                          <span className="text-xs font-semibold text-slate-600 dark:text-slate-305">{r.sleep.hours}h</span>
+                          <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{r.sleep.hours}h</span>
                           <span className="text-[9px] text-slate-400 dark:text-slate-500">Time: {r.sleep.sleepTime}-{r.sleep.wakeTime}</span>
                         </div>
                       </td>

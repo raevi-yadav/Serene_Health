@@ -90,7 +90,7 @@ export default function ConsistencyCalendar({
   return (
     <div
       id="consistency-calendar-card"
-      className="bg-white/75 dark:bg-slate-905/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-3xl p-5 shadow-subtle dark:shadow-none flex flex-col gap-4"
+      className="bg-white/75 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 rounded-3xl p-5 shadow-subtle dark:shadow-none flex flex-col gap-4"
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -99,11 +99,8 @@ export default function ConsistencyCalendar({
           </div>
           <div>
             <h3 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100">
-              Consistency Streak Map
+              Consistency Map
             </h3>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono block uppercase">
-              Exercises done marked in green
-            </span>
           </div>
         </div>
 
@@ -116,7 +113,7 @@ export default function ConsistencyCalendar({
       </div>
 
       {/* Month selectors */}
-      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-850/65 py-1 px-2.5 rounded-xl border border-slate-100 dark:border-slate-800/60">
+      <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/65 py-1 px-2.5 rounded-xl border border-slate-100 dark:border-slate-800/60">
         <button
           id="prev-month-btn"
           type="button"
@@ -165,7 +162,7 @@ export default function ConsistencyCalendar({
             const exerciseDuration = hasExercise ? rec.exercise.durationMinutes : 0;
 
             // Compute background color
-            let bgClass = 'bg-slate-50/70 hover:bg-slate-100 dark:bg-slate-850 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300';
+            let bgClass = 'bg-slate-50/70 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300';
             let borderClass = 'border border-transparent';
 
             if (hasExercise) {
@@ -207,7 +204,7 @@ export default function ConsistencyCalendar({
           <span>Exercise done</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="inline-block w-2.5 h-2.5 bg-slate-150 dark:bg-slate-850 rounded-sm border border-slate-350 dark:border-slate-800" />
+          <span className="inline-block w-2.5 h-2.5 bg-slate-200 dark:bg-slate-800 rounded-sm border border-slate-300 dark:border-slate-800" />
           <span>Active check-in</span>
         </div>
       </div>

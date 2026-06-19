@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -63,6 +64,9 @@ export default function App() {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [activeAppTab, setActiveAppTab] = useState<AppTab>('home');
   const [isMobilePreviewFrame, setIsMobilePreviewFrame] = useState(true); 
+  const [congratsType, setCongratsType] = useState<'water' | 'exercise' | null>(null);
+  const [showOvereating, setShowOvereating] = useState<boolean>(false);
+  const [overeatingCalories, setOvereatingCalories] = useState<number>(0);
   const [greeting, setGreeting] = useState('Welcome');
   const [currentTime, setCurrentTime] = useState('');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -178,6 +182,15 @@ export default function App() {
 
   const handleDietChange = (updates: Partial<DailyRecord['diet']>) => {
     const r = getActiveRecord();
+    const oldCalories = r.diet.calories;
+    const newCalories = (updates.calories !== undefined) ? updates.calories : oldCalories;
+
+    const limitCal = settings.targetCalories * 1.1; // 10% more than target
+    if (newCalories >= limitCal && newCalories > oldCalories) {
+      setOvereatingCalories(newCalories);
+      setShowOvereating(true);
+    }
+
     updateActiveRecord({
       diet: { ...r.diet, ...updates },
     });
@@ -185,6 +198,13 @@ export default function App() {
 
   const handleWaterChange = (updates: Partial<DailyRecord['water']>) => {
     const r = getActiveRecord();
+    const oldWater = r.water.totalMl;
+    const newWater = (updates.totalMl !== undefined) ? updates.totalMl : oldWater;
+
+    if (oldWater < settings.targetWaterMl && newWater >= settings.targetWaterMl) {
+      setCongratsType('water');
+    }
+
     updateActiveRecord({
       water: { ...r.water, ...updates },
     });
@@ -199,6 +219,13 @@ export default function App() {
 
   const handleExerciseChange = (updates: Partial<DailyRecord['exercise']>) => {
     const r = getActiveRecord();
+    const oldMinutes = r.exercise.durationMinutes;
+    const newMinutes = (updates.durationMinutes !== undefined) ? updates.durationMinutes : oldMinutes;
+
+    if (oldMinutes < settings.targetExerciseMinutes && newMinutes >= settings.targetExerciseMinutes) {
+      setCongratsType('exercise');
+    }
+
     updateActiveRecord({
       exercise: { ...r.exercise, ...updates },
     });
@@ -218,8 +245,11 @@ export default function App() {
   };
 
   // Profile actions
-  const handleImportBackup = (newData: Record<string, DailyRecord>) => {
+  const handleImportBackup = (newData: Record<string, DailyRecord>, newSettings?: UserSettings) => {
     saveRecords(newData);
+    if (newSettings) {
+      saveSettings(newSettings);
+    }
     const keys = Object.keys(newData).sort();
     if (keys.length > 0) {
       setActiveDate(keys[keys.length - 1]);
@@ -270,6 +300,21 @@ export default function App() {
     }
   };
 
+  const getAssumedWeightForDate = (dateStr: string): number | null => {
+    if (!dateStr) return null;
+    if (records[dateStr]?.weight?.kg !== null && records[dateStr]?.weight?.kg !== undefined && records[dateStr]?.weight?.kg > 0) {
+      return records[dateStr].weight.kg;
+    }
+    const datesWithWeight = Object.keys(records)
+      .filter((d) => records[d]?.weight?.kg !== null && records[d]?.weight?.kg !== undefined && records[d]?.weight?.kg > 0)
+      .sort();
+    const pastDatesWithWeight = datesWithWeight.filter((d) => d < dateStr);
+    if (pastDatesWithWeight.length > 0) {
+      return records[pastDatesWithWeight[pastDatesWithWeight.length - 1]].weight.kg;
+    }
+    return null;
+  };
+
   const currentRecord = getActiveRecord();
   const sleepProgress = Math.min((currentRecord.sleep.hours / settings.targetSleepHours) * 100, 100);
   const waterProgress = Math.min((currentRecord.water.totalMl / settings.targetWaterMl) * 100, 100);
@@ -291,7 +336,7 @@ export default function App() {
   const weekRecords = getPastWeekDailyRecords();
 
   const bmiHeightM = (settings.heightCm || 175) / 100;
-  const bmiCurrentWeight = currentRecord.weight.kg;
+  const bmiCurrentWeight = currentRecord.weight.kg || getAssumedWeightForDate(activeDate);
   const calBmi = bmiCurrentWeight ? parseFloat((bmiCurrentWeight / (bmiHeightM * bmiHeightM)).toFixed(1)) : null;
 
   let bmiCategory = '';
@@ -322,7 +367,7 @@ export default function App() {
       
       {/* Visual Workspace Controller: smartphone simulator vs full fluid responsive width */}
       <div id="device-view-selector" className="mb-4 flex items-center gap-2 bg-white/80 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm z-10 text-xs text-slate-500 dark:text-slate-400 font-medium font-sans">
-        <span className="pl-2 font-mono text-slate-400 dark:text-slate-505">Viewport Layout:</span>
+        <span className="pl-2 font-mono text-slate-400 dark:text-slate-500">Viewport Layout:</span>
         <button
           id="toggle-view-mobile"
           type="button"
@@ -352,13 +397,13 @@ export default function App() {
         id="app-viewport-wrapper"
         className={`w-full transition-all duration-500 relative flex flex-col ${
           isMobilePreviewFrame
-            ? 'max-w-[430px] h-[880px] border-[10px] border-slate-800/90 dark:border-slate-800 rounded-[44px] shadow-nordic dark:shadow-none bg-slate-55 dark:bg-slate-900 sticky top-2 overflow-hidden'
+            ? 'max-w-[430px] h-[880px] border-[10px] border-slate-800/90 dark:border-slate-800 rounded-[44px] shadow-nordic dark:shadow-none bg-slate-50 dark:bg-slate-900 sticky top-2 overflow-hidden'
             : 'max-w-4xl pb-24'
         }`}
       >
         {/* Android status bar mock if in Mobile Mode */}
         {isMobilePreviewFrame && (
-          <div id="android-status-bar" className="bg-slate-100/90 dark:bg-slate-905/90 backdrop-blur px-6 py-2.5 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 sticky top-0 z-50 border-b border-slate-200/50 dark:border-slate-800/60 selection-none">
+          <div id="android-status-bar" className="bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur px-6 py-2.5 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 sticky top-0 z-50 border-b border-slate-200/50 dark:border-slate-800/60 selection-none">
             <div className="flex items-center gap-1.5 select-none">
               <Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
               <span>{currentTime || '12:00 PM'}</span>
@@ -387,12 +432,12 @@ export default function App() {
             <div>
               <div className="flex items-center gap-2 text-indigo-650 dark:text-indigo-400">
                 <Heart className="w-4 h-4 fill-rose-500 text-rose-500 animate-pulse" />
-                <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-extrabold block">Serene Health</span>
+                <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-extrabold block">Circadia</span>
               </div>
               <h1 className="text-xl font-sans font-extrabold tracking-tight text-slate-800 dark:text-slate-100 mt-0.5">
                 {greeting}, Ravi
               </h1>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 font-sans">Your health workspace & companion</p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 font-sans">Your Health Companion</p>
             </div>
 
             {/* Light/Dark Toggle */}
@@ -400,13 +445,13 @@ export default function App() {
               id="theme-mode-toggle"
               type="button"
               onClick={toggleTheme}
-              className="p-2.5 rounded-2xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-505 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all flex items-center justify-center shadow-subtle dark:shadow-none"
+              className="p-2.5 rounded-2xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all flex items-center justify-center shadow-subtle dark:shadow-none"
               title={isDarkMode ? 'Light view' : 'Dark view'}
             >
               {isDarkMode ? (
                 <Sun className="w-4 h-4 text-amber-400 fill-amber-300" />
               ) : (
-                <Moon className="w-4 h-4 text-slate-505" />
+                <Moon className="w-4 h-4 text-slate-500" />
               )}
             </button>
           </header>
@@ -415,13 +460,13 @@ export default function App() {
           {activeAppTab !== 'profile' && (
             <div
               id="date-navigator"
-              className="flex items-center justify-between bg-white dark:bg-slate-905 border border-slate-200/80 dark:border-slate-805/90 p-3 rounded-2xl shadow-subtle dark:shadow-none selection-none"
+              className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/90 p-3 rounded-2xl shadow-subtle dark:shadow-none selection-none"
             >
               <button
                 id="prev-day-btn"
                 type="button"
                 onClick={handlePrevDay}
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-150 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-850/50 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-205 transition"
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition"
                 title="Previous Day"
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -451,8 +496,8 @@ export default function App() {
                   className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
                   title="Choose a date"
                 />
-                <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500 font-bold font-mono group-hover:text-indigo-550 dark:group-hover:text-indigo-400 transition">
-                  <CalendarIcon className="w-3.5 h-3.5 text-indigo-550 dark:text-indigo-400" />
+                <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500 font-bold font-mono group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition">
+                  <CalendarIcon className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
                   <span>{activeDate}</span>
                 </div>
                 <span className="text-xs font-sans font-extrabold text-slate-700 dark:text-slate-200 mt-0.5">
@@ -465,7 +510,7 @@ export default function App() {
                 type="button"
                 onClick={handleNextDay}
                 disabled={activeDate >= getTodayDateString()}
-                className="p-1.5 border border-slate-150 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-850/50 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-205 transition disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:text-slate-300 dark:disabled:text-slate-600"
+                className="p-1.5 border border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:text-slate-300 dark:disabled:text-slate-600"
                 title="Next Day"
               >
                 <ChevronRight className="w-5 h-5" />
@@ -482,19 +527,19 @@ export default function App() {
               {/* Daily Vitality Progress Banner */}
               <div
                 id="daily-progress-banner"
-                className="bg-gradient-to-br from-slate-850 to-slate-905 border border-slate-750 dark:border-slate-800 rounded-3xl p-5 text-white relative overflow-hidden"
+                className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 dark:border-slate-800 rounded-3xl p-5 text-white relative overflow-hidden"
               >
                 <div className="absolute top-1/2 right-0 -translate-y-1/2 w-28 h-28 bg-emerald-500/10 blur-3xl rounded-full" />
                 <div className="absolute top-0 left-1/3 w-16 h-16 bg-indigo-500/10 blur-2xl rounded-full" />
 
                 <div className="relative">
                   <span className="text-[10px] uppercase font-mono tracking-widest text-emerald-400 font-extrabold">
-                    Day Performance metrics
+                    Day Performance
                   </span>
                   <div className="flex justify-between items-end mt-1.5">
                     <div>
                       <h3 className="text-lg font-sans font-black tracking-tight leading-snug">Ravi's Vitality Score</h3>
-                      <p className="text-[10px] text-slate-300 mt-0.5">Weighted metrics goal alignment</p>
+                      <p className="text-[10px] text-slate-300 mt-0.5">Weighted metrics</p>
                     </div>
                     <span className="text-3xl font-mono font-black tracking-tight text-emerald-400">
                       {averageDailyScore}%
@@ -547,19 +592,19 @@ export default function App() {
 
               {/* Day At a Glance widgets */}
               <div id="day-at-a-glance-section" className="space-y-2">
-                <span className="text-[10px] uppercase font-mono tracking-widest text-slate-450 dark:text-slate-500 font-extrabold">
+                <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-extrabold">
                   Day At A Glance
                 </span>
                 
                 <div className="grid grid-cols-2 gap-3">
                   {/* Calories Today */}
-                  <div className="p-3.5 bg-white dark:bg-slate-905 border border-slate-205 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
+                  <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
                     <div className="flex items-start justify-between">
                       <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Food Energy</span>
                       <Flame className="w-3.5 h-3.5 text-rose-500" />
                     </div>
                     <div className="mt-2 text-right">
-                      <span className="text-sm font-sans font-black text-slate-755 dark:text-slate-105 block">
+                      <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
                         {currentRecord.diet.calories} kcal
                       </span>
                       <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 font-semibold text-rose-500 block">
@@ -569,13 +614,13 @@ export default function App() {
                   </div>
 
                   {/* Sleep Previously */}
-                  <div className="p-3.5 bg-white dark:bg-slate-905 border border-slate-205 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
+                  <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
                     <div className="flex items-start justify-between">
                       <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Sleep Quality</span>
                       <Moon className="w-3.5 h-3.5 text-indigo-500" />
                     </div>
                     <div className="mt-2 text-right">
-                      <span className="text-sm font-sans font-black text-slate-755 dark:text-slate-105 block">
+                      <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
                         {currentRecord.sleep.hours} hrs
                       </span>
                       <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
@@ -585,13 +630,13 @@ export default function App() {
                   </div>
 
                   {/* Water Hydration */}
-                  <div className="p-3.5 bg-white dark:bg-slate-905 border border-slate-205 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
+                  <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
                     <div className="flex items-start justify-between">
-                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Water Hydration</span>
+                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Hydration</span>
                       <Droplet className="w-3.5 h-3.5 text-sky-500" />
                     </div>
                     <div className="mt-2 text-right">
-                      <span className="text-sm font-sans font-black text-slate-755 dark:text-slate-105 block">
+                      <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
                         {currentRecord.water.totalMl} ml
                       </span>
                       <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
@@ -601,31 +646,28 @@ export default function App() {
                   </div>
 
                   {/* Current weight */}
-                  <div className="p-3.5 bg-white dark:bg-slate-905 border border-slate-205 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
+                  <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
                     <div className="flex items-start justify-between">
                       <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Body Weight</span>
                       <Scale className="w-3.5 h-3.5 text-emerald-500" />
                     </div>
                     <div className="mt-2 text-right">
-                      <span className="text-sm font-sans font-black text-slate-755 dark:text-slate-105 block">
-                        {currentRecord.weight.kg ? `${currentRecord.weight.kg} kg` : '-- kg'}
+                      <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
+                        {currentRecord.weight.kg ? `${currentRecord.weight.kg} kg` : (getAssumedWeightForDate(activeDate) ? `${getAssumedWeightForDate(activeDate)} kg` : '-- kg')}
                       </span>
                       <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
-                        Goal: {settings.targetWeightKg ? `${settings.targetWeightKg} kg` : 'Unset'}
+                        {currentRecord.weight.kg ? `Goal: ${settings.targetWeightKg ? `${settings.targetWeightKg} kg` : 'Unset'}` : (getAssumedWeightForDate(activeDate) ? 'Assumed weight' : `Goal: ${settings.targetWeightKg ? `${settings.targetWeightKg} kg` : 'Unset'}`)}
                       </span>
                     </div>
                   </div>
 
                   {/* Body Mass Index (BMI) Card */}
-                  <div id="bmi-status-card" className="col-span-2 p-4 bg-white dark:bg-slate-905 border border-slate-205 dark:border-slate-800/80 rounded-3xl flex flex-col justify-between whitespace-normal shadow-subtle dark:shadow-none space-y-3">
+                  <div id="bmi-status-card" className="col-span-2 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-3xl flex flex-col justify-between whitespace-normal shadow-subtle dark:shadow-none space-y-3">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-extrabold tracking-wider">Body Mass Index (BMI)</span>
-                        <span className="text-[8px] font-mono px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold">
-                          WHO Standards
-                        </span>
                       </div>
-                      <div className="text-[9px] font-mono text-slate-400 dark:text-slate-505 font-medium">
+                      <div className="text-[9px] font-mono text-slate-400 dark:text-slate-500 font-medium">
                         Height: {settings.heightCm} cm
                       </div>
                     </div>
@@ -634,7 +676,7 @@ export default function App() {
                       <div className="space-y-3">
                         <div className="flex items-baseline justify-between">
                           <div className="flex items-baseline gap-1.5">
-                            <span className="text-xl font-sans font-black text-slate-755 dark:text-slate-105">
+                            <span className="text-xl font-sans font-black text-slate-700 dark:text-slate-100">
                               {calBmi}
                             </span>
                             <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
@@ -673,23 +715,23 @@ export default function App() {
 
                           {/* Legend / Range labels */}
                           <div className="grid grid-cols-4 gap-1 text-[8px] font-mono text-center text-slate-400 dark:text-slate-500">
-                            <div className="text-left font-semibold text-sky-505 dark:text-sky-400">
+                            <div className="text-left font-semibold text-sky-500 dark:text-sky-400">
                               &lt;18.5 (Under)
                             </div>
-                            <div className="font-semibold text-emerald-505 dark:text-emerald-400">
+                            <div className="font-semibold text-emerald-500 dark:text-emerald-400">
                               18.5 - 24.9 (Normal)
                             </div>
-                            <div className="font-semibold text-amber-505 dark:text-amber-400">
+                            <div className="font-semibold text-amber-500 dark:text-amber-400">
                               25 - 29.9 (Over)
                             </div>
-                            <div className="text-right font-semibold text-rose-505 dark:text-rose-455">
+                            <div className="text-right font-semibold text-rose-500 dark:text-rose-500">
                               &ge;30 (Obese)
                             </div>
                           </div>
                         </div>
                       </div>
                     ) : (
-                      <div className="py-2.5 px-3 bg-slate-50/50 dark:bg-slate-850/30 border border-slate-100 dark:border-slate-800/80 rounded-xl text-center">
+                      <div className="py-2.5 px-3 bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/80 rounded-xl text-center">
                         <span className="text-[11px] text-slate-500 dark:text-slate-400 block font-semibold">
                           Weight is not recorded for this day
                         </span>
@@ -702,7 +744,7 @@ export default function App() {
                 </div>
 
                 {/* Did Exercise or Not strip */}
-                <div className={`p-3.5 border rounded-2xl flex items-center justify-between shadow-subtle dark:shadow-none bg-white dark:bg-slate-905 ${currentRecord.exercise.durationMinutes > 0 ? 'border-emerald-100 dark:border-emerald-950/40 bg-emerald-50/5 dark:bg-emerald-950/5' : 'border-slate-200 dark:border-slate-800'}`}>
+                <div className={`p-3.5 border rounded-2xl flex items-center justify-between shadow-subtle dark:shadow-none bg-white dark:bg-slate-900 ${currentRecord.exercise.durationMinutes > 0 ? 'border-emerald-100 dark:border-emerald-950/40 bg-emerald-50/5 dark:bg-emerald-950/5' : 'border-slate-200 dark:border-slate-800'}`}>
                   <div className="flex items-center gap-2.5">
                     {currentRecord.exercise.durationMinutes > 0 ? (
                       <CheckCircle2 className="w-5 h-5 text-emerald-500 fill-emerald-50 dark:fill-emerald-950/20" />
@@ -762,6 +804,7 @@ export default function App() {
               <WeightWidget
                 record={currentRecord.weight}
                 onChange={handleWeightChange}
+                assumedWeight={getAssumedWeightForDate(activeDate)}
               />
 
               {/* Detailed Trend charts focusing on sleep and body weight timelines */}
@@ -809,70 +852,69 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="text-base font-black tracking-tight leading-snug">Ravi Yadav</h3>
-                  <span className="text-[10px] font-mono text-indigo-100 uppercase tracking-widest block font-bold">Premium Core Companion Member</span>
-                  <span className="text-[10px] text-indigo-200 block font-sans mt-0.5">Locale: UTC-07:00 • 2026</span>
+                  <span className="text-[10px] font-mono text-indigo-100 uppercase tracking-widest block font-bold">Premium Member</span>
                 </div>
               </div>
 
               {/* Customizable Goals and Targets Card */}
-              <div className="bg-white/75 dark:bg-slate-905/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-805/85 p-5 rounded-3xl shadow-subtle dark:shadow-none space-y-4">
+              <div className="bg-white/75 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/85 p-5 rounded-3xl shadow-subtle dark:shadow-none space-y-4">
                 <div className="flex items-center gap-2">
                   <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-xl">
                     <Settings className="w-4.5 h-4.5" />
                   </div>
                   <div>
                     <h3 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100">
-                      Wellness Metric Directives
+                      Wellness Metric Goals
                     </h3>
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono block uppercase">
-                      Changes instantly synchronize settings
-                    </span>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3.5 text-xs text-slate-650 dark:text-slate-350 font-sans pt-1">
+                <div className="grid grid-cols-2 gap-3.5 text-xs text-slate-600 dark:text-slate-400 font-sans pt-1">
                   
                   {/* Calorie goal */}
                   <div>
                     <label className="block text-slate-400 dark:text-slate-500 font-mono text-[9px] uppercase mb-1 font-bold">
-                      Energy target goal (kcal)
+                      Energy target (kcal)
                     </label>
                     <input
                       id="profile-settings-calories"
                       type="number"
+                      inputMode="numeric"
                       value={settings.targetCalories}
                       onChange={(e) => saveSettings({ ...settings, targetCalories: Number(e.target.value) || 2200 })}
-                      className="w-full px-3 py-2 border border-slate-205 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
                     />
                   </div>
 
                   {/* Height (cm) */}
                   <div>
                     <label className="block text-slate-400 dark:text-slate-500 font-mono text-[9px] uppercase mb-1 font-bold">
-                      User Height (cm)
+                      Height (cm)
                     </label>
                     <input
                       id="profile-settings-height"
                       type="number"
+                      inputMode="numeric"
                       value={settings.heightCm || ''}
-                      placeholder="e.g. 175"
+                      placeholder="in cm"
                       onChange={(e) => saveSettings({ ...settings, heightCm: Number(e.target.value) || 175 })}
-                      className="w-full px-3 py-2 border border-slate-205 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
                     />
                   </div>
 
                   {/* Weight goal */}
                   <div>
                     <label className="block text-slate-400 dark:text-slate-500 font-mono text-[9px] uppercase mb-1 font-bold">
-                      Body weight target (kg)
+                      Body weight Goal (kg)
                     </label>
                     <input
                       id="profile-settings-weight"
                       type="number"
+                      inputMode="decimal"
                       value={settings.targetWeightKg || ''}
-                      placeholder="e.g. 70"
+                      placeholder="in kg"
                       onChange={(e) => saveSettings({ ...settings, targetWeightKg: Number(e.target.value) || 70 })}
-                      className="w-full px-3 py-2 border border-slate-205 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
                     />
                   </div>
 
@@ -884,40 +926,43 @@ export default function App() {
                     <input
                       id="profile-settings-sleep"
                       type="number"
+                      inputMode="decimal"
                       value={settings.targetSleepHours}
                       onChange={(e) => saveSettings({ ...settings, targetSleepHours: Number(e.target.value) || 8 })}
-                      className="w-full px-3 py-2 border border-slate-205 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
                     />
                   </div>
 
                   {/* Weekly workout consistency goal */}
                   <div>
                     <label className="block text-slate-400 dark:text-slate-500 font-mono text-[9px] uppercase mb-1 font-bold">
-                      Exercise Days / Week Goal
+                      Exercise Days/Week Goal
                     </label>
                     <input
                       id="profile-settings-exercise-days"
                       type="number"
+                      inputMode="numeric"
                       min="1"
                       max="7"
                       value={settings.targetExerciseDaysPerWeek || ''}
-                      placeholder="e.g. 4"
+                      placeholder="no of days"
                       onChange={(e) => saveSettings({ ...settings, targetExerciseDaysPerWeek: Number(e.target.value) || 4 })}
-                      className="w-full px-3 py-2 border border-slate-205 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
                     />
                   </div>
 
                   {/* Daily workout minutes */}
                   <div>
                     <label className="block text-slate-400 dark:text-slate-500 font-mono text-[9px] uppercase mb-1 font-bold">
-                      Exercise Duration Target (mins)
+                      Exercise Duration Goal (mins)
                     </label>
                     <input
                       id="profile-settings-exercise-duration"
                       type="number"
+                      inputMode="numeric"
                       value={settings.targetExerciseMinutes}
                       onChange={(e) => saveSettings({ ...settings, targetExerciseMinutes: Number(e.target.value) || 30 })}
-                      className="w-full px-3 py-2 border border-slate-205 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
                     />
                   </div>
 
@@ -930,16 +975,17 @@ export default function App() {
                       id="profile-settings-water"
                       type="number"
                       step="250"
+                      inputMode="numeric"
                       value={settings.targetWaterMl}
                       onChange={(e) => saveSettings({ ...settings, targetWaterMl: Number(e.target.value) || 2000 })}
-                      className="w-full px-3 py-2 border border-slate-205 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-850 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
                     />
                   </div>
 
                   {/* Default glass size */}
                   <div className="col-span-2">
                     <label className="block text-slate-400 dark:text-slate-500 font-mono text-[9px] uppercase mb-1.5 font-bold">
-                      Default Hydration Glass Capacity
+                      Default Glass Capacity
                     </label>
                     <div className="grid grid-cols-3 gap-2">
                       {[250, 500, 750].map((size) => {
@@ -953,7 +999,7 @@ export default function App() {
                             className={`py-1.5 px-3 rounded-xl border text-xs font-semibold font-mono transition ${
                               active
                                 ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-850 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs'
-                                : 'bg-slate-50/50 dark:bg-slate-900/60 border-slate-150 dark:border-slate-800 text-slate-505 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                : 'bg-slate-50/50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                           >
                             {size} ml
@@ -978,6 +1024,7 @@ export default function App() {
                 onImport={handleImportBackup}
                 onClear={handleClearAllData}
                 onResetSample={handleReloadSampleData}
+                settings={settings}
               />
             </div>
           )}
@@ -987,7 +1034,7 @@ export default function App() {
         {/* STICKY BOTTOM TABS SELECTOR BAR - Fits exactly inside smartphone screen, responsive globally */}
         <nav
           id="app-bottom-tab-bar"
-          className={`sticky bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-905/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-805/90 py-3.5 px-6 flex justify-around items-center z-40 shadow-[0_-8px_24px_rgba(15,23,42,0.02)] selection-none ${
+          className={`sticky bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800/90 py-3.5 px-6 flex justify-around items-center z-40 shadow-[0_-8px_24px_rgba(15,23,42,0.02)] selection-none ${
             isMobilePreviewFrame ? 'rounded-b-[34px]' : 'lg:rounded-2xl'
           }`}
         >
@@ -998,11 +1045,11 @@ export default function App() {
             onClick={() => setActiveAppTab('home')}
             className={`flex flex-col items-center gap-1 text-center transition ${
               activeAppTab === 'home'
-                ? 'text-indigo-505 dark:text-indigo-400 font-bold scale-105'
-                : 'text-slate-400 dark:text-slate-500 hover:text-slate-650 dark:hover:text-slate-350'
+                ? 'text-indigo-500 dark:text-indigo-400 font-bold scale-105'
+                : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
             }`}
           >
-            <Home className="w-5 h-5" />
+            <Home className="w-5 h-5 text-slate-405 dark:text-slate-400" />
             <span className="text-[10px] tracking-tight">Home</span>
           </button>
 
@@ -1013,11 +1060,11 @@ export default function App() {
             onClick={() => setActiveAppTab('exercise')}
             className={`flex flex-col items-center gap-1 text-center transition ${
               activeAppTab === 'exercise'
-                ? 'text-teal-550 dark:text-teal-400 font-bold scale-105'
-                : 'text-slate-400 dark:text-slate-500 hover:text-slate-650 dark:hover:text-slate-350'
+                ? 'text-teal-500 dark:text-teal-400 font-bold scale-105'
+                : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
             }`}
           >
-            <Activity className="w-5 h-5" />
+            <Activity className="w-5 h-5 text-slate-405 dark:text-slate-400" />
             <span className="text-[10px] tracking-tight">Exercise</span>
           </button>
 
@@ -1029,10 +1076,10 @@ export default function App() {
             className={`flex flex-col items-center gap-1 text-center transition ${
               activeAppTab === 'food'
                 ? 'text-rose-500 dark:text-rose-400 font-bold scale-105'
-                : 'text-slate-400 dark:text-slate-500 hover:text-slate-650 dark:hover:text-slate-350'
+                : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
             }`}
           >
-            <Flame className="w-5 h-5" />
+            <Flame className="w-5 h-5 text-slate-405 dark:text-slate-400" />
             <span className="text-[10px] tracking-tight">Food</span>
           </button>
 
@@ -1043,14 +1090,117 @@ export default function App() {
             onClick={() => setActiveAppTab('profile')}
             className={`flex flex-col items-center gap-1 text-center transition ${
               activeAppTab === 'profile'
-                ? 'text-indigo-505 dark:text-indigo-400 font-bold scale-105'
-                : 'text-slate-400 dark:text-slate-500 hover:text-slate-650 dark:hover:text-slate-350'
+                ? 'text-indigo-500 dark:text-indigo-400 font-bold scale-105'
+                : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
             }`}
           >
             <User className="w-5 h-5" />
             <span className="text-[10px] tracking-tight">Profile</span>
           </button>
         </nav>
+
+        {/* Portal root for modals and overlays to escape local container stacking contexts */}
+        <div id="modal-portal-root" />
+
+        {/* Congratulations Popup Overlay */}
+        <AnimatePresence>
+          {congratsType && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans"
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                className="w-full max-w-[320px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 shadow-2xl dark:shadow-none relative overflow-hidden flex flex-col items-center text-center space-y-4"
+              >
+                {/* Decorative Sparkles background */}
+                <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
+                
+                <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-950/40 rounded-full flex items-center justify-center border border-emerald-100 dark:border-emerald-900/50 mt-2 text-emerald-500">
+                  {congratsType === 'water' ? (
+                    <Droplet className="w-7 h-7 text-sky-500 animate-bounce" />
+                  ) : (
+                    <Activity className="w-7 h-7 text-emerald-500 animate-bounce" />
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <h3 className="text-base font-black text-slate-800 dark:text-slate-100 tracking-tight">
+                    Target Achieved! 🎉
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed px-1">
+                    {congratsType === 'water' ? (
+                      <>Amazing hydration today! You've met your daily water target of <strong className="text-slate-700 dark:text-slate-200">{settings.targetWaterMl}ml</strong>. Keep up the brilliant work!</>
+                    ) : (
+                      <>Incredible job! You've reached your daily exercise target of <strong className="text-slate-700 dark:text-slate-200">{settings.targetExerciseMinutes} minutes</strong>. Your body is thanking you!</>
+                    )}
+                  </p>
+                </div>
+
+                <button
+                  id="btn-congrats-close"
+                  type="button"
+                  onClick={() => setCongratsType(null)}
+                  className="w-full py-2.5 px-4 bg-slate-900 dark:bg-slate-50 hover:bg-slate-850 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold rounded-2xl transition duration-205 shadow-md-light dark:shadow-none"
+                >
+                  Awesome, keep it up!
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Overeating Alert Overlay */}
+        <AnimatePresence>
+          {showOvereating && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans"
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                className="w-full max-w-[320px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 shadow-2xl dark:shadow-none relative overflow-hidden flex flex-col items-center text-center space-y-4"
+              >
+                <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 to-rose-500" />
+                
+                <div className="w-14 h-14 bg-amber-50 dark:bg-amber-950/40 rounded-full flex items-center justify-center border border-amber-100 dark:border-amber-900/50 mt-2 text-amber-500">
+                  <Flame className="w-7 h-7 text-amber-500 animate-pulse" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <h3 className="text-base font-black text-slate-800 dark:text-slate-100 tracking-tight">
+                    Calorie Target Exceeded! ⚠️
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed px-1">
+                    You have consumed <strong className="text-amber-600 dark:text-amber-400">{overeatingCalories} kcal</strong>, which is over 10% more than your healthy target limit of <strong className="text-slate-700 dark:text-slate-200">{settings.targetCalories} kcal</strong>.
+                  </p>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 italic mt-1 leading-relaxed">
+                    Stop overeating and practice mindful nutrition. Giving your digestion a timely rest supports long-term wellness!
+                  </p>
+                </div>
+
+                <button
+                  id="btn-overeating-close"
+                  type="button"
+                  onClick={() => setShowOvereating(false)}
+                  className="w-full py-2.5 px-4 bg-slate-900 dark:bg-slate-50 hover:bg-slate-850 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-xs font-semibold rounded-2xl transition duration-205 shadow-md-light dark:shadow-none"
+                >
+                  I'm finished eating today
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
       </div>
     </div>

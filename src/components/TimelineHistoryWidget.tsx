@@ -138,7 +138,7 @@ export default function TimelineHistoryWidget({
 
   // Theme styles based on metric type
   const isWeight = metric === 'weight';
-  const accentColor = isWeight ? 'text-emerald-500' : 'text-indigo-505';
+  const accentColor = isWeight ? 'text-emerald-500' : 'text-indigo-500';
   const strokeColor = isWeight ? '#10b981' : '#6366f1';
   const fillColor = isWeight ? 'url(#weightGrad)' : 'url(#sleepGrad)';
   const gridColor = isDarkMode ? '#1e293b' : '#f1f5f9';
@@ -147,26 +147,23 @@ export default function TimelineHistoryWidget({
   return (
     <div
       id={`${metric}-timeline-card`}
-      className="bg-white/75 dark:bg-slate-905/90 backdrop-blur-md border border-slate-205 dark:border-slate-805/85 rounded-3xl p-5 shadow-subtle dark:shadow-none space-y-4"
+      className="bg-white/75 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-800/85 rounded-3xl p-5 shadow-subtle dark:shadow-none space-y-4"
     >
       {/* Title & Range Buttons */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className={`p-2 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-100 dark:border-slate-800 ${accentColor}`}>
+          <div className={`p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 ${accentColor}`}>
             {isWeight ? <Scale className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest block font-mono font-bold">
-              Timeline Performance
-            </span>
             <h3 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100 mt-0.5">
-              {isWeight ? 'Body Weight Inventory Map' : 'Sleep Duration Performance'}
+              {isWeight ? 'Weight Graph' : 'Sleep Performance'}
             </h3>
           </div>
         </div>
 
         {/* Duration Selector */}
-        <div className="flex gap-1 bg-slate-100/70 dark:bg-slate-850 p-1 rounded-xl self-start sm:self-center border border-slate-150/40 dark:border-slate-800/40">
+        <div className="flex gap-1 bg-slate-100/70 dark:bg-slate-800 p-1 rounded-xl self-start sm:self-center border border-slate-200/40 dark:border-slate-800/40">
           {(['1W', '1M', '3M', '1Y', 'ALL'] as TimeRange[]).map((r) => {
             const active = r === range;
             return (
@@ -191,29 +188,29 @@ export default function TimelineHistoryWidget({
       {/* Stock Market Style KPI Stat Callouts */}
       <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 text-xs font-sans">
         {/* Latest */}
-        <div className="p-2 bg-slate-50/50 dark:bg-slate-850/30 rounded-xl">
-          <span className="text-[9px] text-slate-400 dark:text-slate-550 block font-mono">LATEST</span>
-          <span className="font-bold text-slate-800 dark:text-slate-150 block mt-0.5">
+        <div className="p-2 bg-slate-50/50 dark:bg-slate-800/30 rounded-xl">
+          <span className="text-[9px] text-slate-400 dark:text-slate-500 block font-mono">LATEST</span>
+          <span className="font-bold text-slate-800 dark:text-slate-100 block mt-0.5">
             {currentVal} {isWeight ? 'kg' : 'hrs'}
           </span>
         </div>
         {/* Average */}
-        <div className="p-2 bg-slate-50/50 dark:bg-slate-850/30 rounded-xl">
-          <span className="text-[9px] text-slate-400 dark:text-slate-550 block font-mono">AVG</span>
-          <span className="font-bold text-slate-800 dark:text-slate-155 block mt-0.5">
+        <div className="p-2 bg-slate-50/50 dark:bg-slate-800/30 rounded-xl">
+          <span className="text-[9px] text-slate-400 dark:text-slate-500 block font-mono">AVG</span>
+          <span className="font-bold text-slate-800 dark:text-slate-200 block mt-0.5">
             {avgVal} {isWeight ? 'kg' : 'hrs'}
           </span>
         </div>
         {/* Range Min/Max */}
-        <div className="p-2 bg-slate-50/50 dark:bg-slate-850/30 rounded-xl">
-          <span className="text-[9px] text-slate-400 dark:text-slate-550 block font-mono">RANGE</span>
-          <span className="font-semibold text-slate-800 dark:text-slate-155 block mt-0.5 text-[11px] leading-tight font-mono">
+        <div className="p-2 bg-slate-50/50 dark:bg-slate-800/30 rounded-xl">
+          <span className="text-[9px] text-slate-400 dark:text-slate-500 block font-mono">RANGE</span>
+          <span className="font-semibold text-slate-800 dark:text-slate-200 block mt-0.5 text-[11px] leading-tight font-mono">
             {minVal} - {maxVal}
           </span>
         </div>
         {/* Range Trend Direction */}
-        <div className="p-2 bg-slate-50/50 dark:bg-slate-850/30 rounded-xl flex flex-col justify-between">
-          <span className="text-[9px] text-slate-400 dark:text-slate-550 block font-mono">PERIOD TREND</span>
+        <div className="p-2 bg-slate-50/50 dark:bg-slate-800/30 rounded-xl flex flex-col justify-between">
+          <span className="text-[9px] text-slate-400 dark:text-slate-500 block font-mono">PERIOD TREND</span>
           <div className="flex items-center gap-1 mt-0.5">
             {delta > 0 ? (
               <TrendingUp className="w-3.5 h-3.5 text-rose-500" />
@@ -289,7 +286,7 @@ export default function TimelineHistoryWidget({
       </div>
 
       {/* Target status indicator */}
-      <div className="flex items-center justify-between text-[10px] text-slate-450 dark:text-slate-500 font-mono pt-1.5 border-t border-slate-100 dark:border-slate-800/40">
+      <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-mono pt-1.5 border-t border-slate-100 dark:border-slate-800/40">
         <span className="flex items-center gap-1.5">
           <Award className="w-3.5 h-3.5 text-amber-500" />
           <span>Active Target: {targetValue} {isWeight ? 'kg' : 'hours'}</span>
