@@ -38,10 +38,10 @@ export function getBlankDailyRecord(date: string, glassSizeMl: number = 250): Da
   return {
     date,
     sleep: {
-      hours: 7,
-      quality: 3,
-      sleepTime: '23:00',
-      wakeTime: '06:00',
+      hours: 0,
+      quality: 0,
+      sleepTime: '',
+      wakeTime: '',
     },
     diet: {
       calories: 0,

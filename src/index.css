@@ -73,3 +73,13 @@ input[type=number] {
 ::-webkit-scrollbar-thumb:hover {
   background: #cbd5e1;
 }
+
+/* Remove default click outlines, bold yellow rings, and borders across Recharts components */
+.recharts-wrapper, 
+.recharts-wrapper *,
+.recharts-responsive-container,
+.recharts-responsive-container * {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent;
+}

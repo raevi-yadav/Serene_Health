@@ -15,6 +15,8 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
     type: null,
     message: '',
   });
+  const [showMockConfirm, setShowMockConfirm] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExport = () => {
@@ -184,7 +186,7 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
             <button
               id="reload-sample-data-btn"
               type="button"
-              onClick={onResetSample}
+              onClick={() => setShowMockConfirm(true)}
               className="flex-1 py-2 px-3 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100/80 dark:hover:bg-indigo-900/60 text-indigo-700/90 dark:text-indigo-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -194,7 +196,7 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
             <button
               id="clear-all-data-btn"
               type="button"
-              onClick={onClear}
+              onClick={() => setShowClearConfirm(true)}
               className="flex-1 py-2 px-3 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100/80 dark:hover:bg-rose-900/60 text-rose-700/90 dark:text-rose-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -203,6 +205,100 @@ export default function DataManagement({ onImport, onClear, onResetSample, allRe
           </div>
         </div>
       </div>
+
+      {/* Mock Sample Confirmation Modal */}
+      {showMockConfirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-xl relative animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-50 dark:bg-indigo-950/55 rounded-2xl text-indigo-600 dark:text-indigo-400">
+                <RefreshCw className="w-5 h-5" />
+              </div>
+              <h4 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100">
+                Load Mock Wellness Sample?
+              </h4>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-450 leading-relaxed font-sans">
+              This will overwrite your existing daily logs with sample demonstration records.
+            </p>
+            <div className="flex items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMockConfirm(false);
+                  onResetSample();
+                }}
+                className="flex-1 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition"
+              >
+                Yes, Load Mock
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMockConfirm(false)}
+                className="flex-1 py-2 text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clean State Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-xl relative animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-rose-50 dark:bg-rose-950/40 rounded-2xl text-rose-600 dark:text-rose-450">
+                <AlertCircle className="w-5 h-5 text-rose-500" />
+              </div>
+              <h4 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100">
+                Clear & Reset All Data?
+              </h4>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-450 leading-relaxed font-sans">
+              This action is irreversible and will erase all your wellness metrics, targets, and custom habits.
+            </p>
+            
+            <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100/50 dark:border-indigo-900/40 rounded-2xl text-[10px] text-indigo-700 dark:text-indigo-300 leading-relaxed font-sans">
+              <span className="font-bold block mb-0.5">⚠️ Data Loss Warning:</span>
+              Please export a Backup file before resetting so you don’t lose your valuable tracks.
+            </div>
+
+            <div className="flex flex-col gap-2 pt-1">
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowClearConfirm(false);
+                    onClear();
+                  }}
+                  className="flex-1 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition"
+                >
+                  Delete Everything
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowClearConfirm(false)}
+                  className="flex-1 py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+              </div>
+              
+              <button
+                type="button"
+                onClick={() => {
+                  handleExport();
+                }}
+                className="w-full py-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 hover:bg-slate-50 active:bg-slate-100 text-xs font-bold text-indigo-600 dark:text-indigo-400 rounded-xl transition"
+              >
+                Export Backup First
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

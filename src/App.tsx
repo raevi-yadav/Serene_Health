@@ -65,10 +65,75 @@ export default function App() {
   const [activeDate, setActiveDate] = useState<string>('');
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [activeAppTab, setActiveAppTab] = useState<AppTab>('home');
+
+  // Wellness Metrics popup/inline editing temporary state managers
+  const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
+  const [profileTargetCalories, setProfileTargetCalories] = useState<number>(DEFAULT_SETTINGS.targetCalories);
+  const [profileHeightCm, setProfileHeightCm] = useState<number>(DEFAULT_SETTINGS.heightCm);
+  const [profileTargetWeightKg, setProfileTargetWeightKg] = useState<number>(DEFAULT_SETTINGS.targetWeightKg);
+  const [profileTargetSleepHours, setProfileTargetSleepHours] = useState<number>(DEFAULT_SETTINGS.targetSleepHours);
+  const [profileTargetExerciseDaysPerWeek, setProfileTargetExerciseDaysPerWeek] = useState<number>(DEFAULT_SETTINGS.targetExerciseDaysPerWeek);
+  const [profileTargetExerciseMinutes, setProfileTargetExerciseMinutes] = useState<number>(DEFAULT_SETTINGS.targetExerciseMinutes);
+  const [profileTargetWaterMl, setProfileTargetWaterMl] = useState<number>(DEFAULT_SETTINGS.targetWaterMl);
+  const [profileDefaultGlassSizeMl, setProfileDefaultGlassSizeMl] = useState<number>(DEFAULT_SETTINGS.defaultGlassSizeMl);
+
+  const startProfileEditing = () => {
+    setProfileTargetCalories(settings.targetCalories);
+    setProfileHeightCm(settings.heightCm || 175);
+    setProfileTargetWeightKg(settings.targetWeightKg || 70);
+    setProfileTargetSleepHours(settings.targetSleepHours);
+    setProfileTargetExerciseDaysPerWeek(settings.targetExerciseDaysPerWeek || 4);
+    setProfileTargetExerciseMinutes(settings.targetExerciseMinutes);
+    setProfileTargetWaterMl(settings.targetWaterMl || 2000);
+    setProfileDefaultGlassSizeMl(settings.defaultGlassSizeMl || 250);
+    setIsEditingProfile(true);
+  };
+
+  const handleSaveProfileSettings = () => {
+    saveSettings({
+      ...settings,
+      targetCalories: profileTargetCalories,
+      heightCm: profileHeightCm,
+      targetWeightKg: profileTargetWeightKg,
+      targetSleepHours: profileTargetSleepHours,
+      targetExerciseDaysPerWeek: profileTargetExerciseDaysPerWeek,
+      targetExerciseMinutes: profileTargetExerciseMinutes,
+      targetWaterMl: profileTargetWaterMl,
+      defaultGlassSizeMl: profileDefaultGlassSizeMl,
+    });
+    setIsEditingProfile(false);
+  };
+
+  const handleCancelProfileEditing = () => {
+    setIsEditingProfile(false);
+  };
   const isNativeAndroid = Capacitor.getPlatform() === 'android';
-  const [isMobilePreviewFrame, setIsMobilePreviewFrame] = useState(() => {
-    return !isNativeAndroid;
+  const [isMobileOrTabletScreen, setIsMobileOrTabletScreen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 1024 || isNativeAndroid;
+    }
+    return isNativeAndroid;
   });
+  const [isMobilePreviewFrame, setIsMobilePreviewFrame] = useState(() => {
+    if (isNativeAndroid || (typeof window !== 'undefined' && window.innerWidth < 1024)) {
+      return false;
+    }
+    return true;
+  });
+
+  // Dynamic window resizing synchronization for responsive mobile-friendly layouts
+  useEffect(() => {
+    const handleResize = () => {
+      const isMobileSize = window.innerWidth < 1024;
+      setIsMobileOrTabletScreen(isMobileSize || isNativeAndroid);
+      if (isMobileSize || isNativeAndroid) {
+        setIsMobilePreviewFrame(false);
+      }
+    };
+    handleResize(); // run on initial mount
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isNativeAndroid]);
   const [congratsType, setCongratsType] = useState<'water' | 'exercise' | null>(null);
   const [showOvereating, setShowOvereating] = useState<boolean>(false);
   const [overeatingCalories, setOvereatingCalories] = useState<number>(0);
@@ -464,10 +529,10 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'} flex flex-col items-center justify-start ${isNativeAndroid ? 'p-0' : 'p-2 sm:p-6'} transition-all`}>
+    <div className={`min-h-screen ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'} flex flex-col items-center justify-start ${isNativeAndroid || isMobileOrTabletScreen ? 'p-0' : 'p-2 sm:p-6'} transition-all`}>
       
       {/* Visual Workspace Controller: smartphone simulator vs full fluid responsive width */}
-      {!isNativeAndroid && (
+      {!isNativeAndroid && !isMobileOrTabletScreen && (
         <div id="device-view-selector" className="mb-4 flex items-center gap-2 bg-white/80 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm z-10 text-xs text-slate-500 dark:text-slate-400 font-medium font-sans">
           <span className="pl-2 font-mono text-slate-400 dark:text-slate-500">Viewport Layout:</span>
           <button
@@ -501,11 +566,11 @@ export default function App() {
         className={`w-full transition-all duration-500 relative flex flex-col ${
           isMobilePreviewFrame
             ? 'max-w-[430px] h-[880px] border-[10px] border-slate-800/90 dark:border-slate-800 rounded-[44px] shadow-nordic dark:shadow-none bg-slate-50 dark:bg-slate-900 sticky top-2 overflow-hidden'
-            : (isNativeAndroid ? 'min-h-screen pb-24 w-full' : 'max-w-4xl pb-24')
+            : (isNativeAndroid || isMobileOrTabletScreen ? 'min-h-screen pb-24 w-full bg-slate-50 dark:bg-slate-900' : 'max-w-4xl pb-24')
         }`}
       >
         {/* Android status bar mock if in Mobile Mode (never shown on native Android) */}
-        {isMobilePreviewFrame && !isNativeAndroid && (
+        {isMobilePreviewFrame && !isNativeAndroid && !isMobileOrTabletScreen && (
           <div id="android-status-bar" className="bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur px-6 py-2.5 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 sticky top-0 z-50 border-b border-slate-200/50 dark:border-slate-800/60 selection-none">
             <div className="flex items-center gap-1.5 select-none">
               <Clock className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
@@ -964,18 +1029,50 @@ export default function App() {
                   <span className="text-[10px] font-mono text-indigo-100 uppercase tracking-widest block font-bold">Premium Member</span>
                 </div>
               </div>
-
               {/* Customizable Goals and Targets Card */}
               <div className="bg-white/75 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/85 p-5 rounded-3xl shadow-subtle dark:shadow-none space-y-4">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-xl">
-                    <Settings className="w-4.5 h-4.5" />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                      <Settings className="w-4.5 h-4.5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100">
+                        Wellness Metric Goals
+                      </h3>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100">
-                      Wellness Metric Goals
-                    </h3>
-                  </div>
+
+                  {/* Header action controllers */}
+                  {!isEditingProfile ? (
+                    <button
+                      id="edit-profile-metrics-btn"
+                      type="button"
+                      onClick={startProfileEditing}
+                      className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/55 border border-indigo-100 dark:border-indigo-900/55 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-450 transition-all cursor-pointer active:scale-95 duration-100"
+                    >
+                      Edit Goals
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        id="cancel-profile-metrics-btn"
+                        type="button"
+                        onClick={handleCancelProfileEditing}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-705 border border-slate-200 dark:border-slate-700/60 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 transition-all cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        id="save-profile-metrics-btn"
+                        type="button"
+                        onClick={handleSaveProfileSettings}
+                        className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md shadow-emerald-500/10"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3.5 text-xs text-slate-600 dark:text-slate-400 font-sans pt-1">
@@ -989,9 +1086,14 @@ export default function App() {
                       id="profile-settings-calories"
                       type="number"
                       inputMode="numeric"
-                      value={settings.targetCalories}
-                      onChange={(e) => saveSettings({ ...settings, targetCalories: Number(e.target.value) || 2200 })}
-                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      value={isEditingProfile ? profileTargetCalories : settings.targetCalories}
+                      readOnly={!isEditingProfile}
+                      onChange={(e) => setProfileTargetCalories(Number(e.target.value) || 0)}
+                      className={`w-full px-3 py-2 border font-mono rounded-xl focus:outline-none transition-all ${
+                        isEditingProfile 
+                          ? 'bg-white dark:bg-slate-950 border-indigo-200 dark:border-indigo-900 ring-1 ring-indigo-50 dark:ring-indigo-950/20 text-slate-800 dark:text-slate-100 font-bold' 
+                          : 'bg-slate-100/50 dark:bg-slate-900 border-transparent text-slate-500 dark:text-slate-400 cursor-not-allowed select-none opacity-85'
+                      }`}
                     />
                   </div>
 
@@ -1004,10 +1106,15 @@ export default function App() {
                       id="profile-settings-height"
                       type="number"
                       inputMode="numeric"
-                      value={settings.heightCm || ''}
+                      value={isEditingProfile ? profileHeightCm : (settings.heightCm || '')}
+                      readOnly={!isEditingProfile}
                       placeholder="in cm"
-                      onChange={(e) => saveSettings({ ...settings, heightCm: Number(e.target.value) || 175 })}
-                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      onChange={(e) => setProfileHeightCm(Number(e.target.value) || 0)}
+                      className={`w-full px-3 py-2 border font-mono rounded-xl focus:outline-none transition-all ${
+                        isEditingProfile 
+                          ? 'bg-white dark:bg-slate-950 border-indigo-200 dark:border-indigo-900 ring-1 ring-indigo-50 dark:ring-indigo-950/20 text-slate-800 dark:text-slate-100 font-bold' 
+                          : 'bg-slate-100/50 dark:bg-slate-900 border-transparent text-slate-500 dark:text-slate-400 cursor-not-allowed select-none opacity-85'
+                      }`}
                     />
                   </div>
 
@@ -1020,10 +1127,15 @@ export default function App() {
                       id="profile-settings-weight"
                       type="number"
                       inputMode="decimal"
-                      value={settings.targetWeightKg || ''}
+                      value={isEditingProfile ? profileTargetWeightKg : (settings.targetWeightKg || '')}
+                      readOnly={!isEditingProfile}
                       placeholder="in kg"
-                      onChange={(e) => saveSettings({ ...settings, targetWeightKg: Number(e.target.value) || 70 })}
-                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      onChange={(e) => setProfileTargetWeightKg(Number(e.target.value) || 0)}
+                      className={`w-full px-3 py-2 border font-mono rounded-xl focus:outline-none transition-all ${
+                        isEditingProfile 
+                          ? 'bg-white dark:bg-slate-950 border-indigo-200 dark:border-indigo-900 ring-1 ring-indigo-50 dark:ring-indigo-950/20 text-slate-800 dark:text-slate-100 font-bold' 
+                          : 'bg-slate-100/50 dark:bg-slate-900 border-transparent text-slate-500 dark:text-slate-400 cursor-not-allowed select-none opacity-85'
+                      }`}
                     />
                   </div>
 
@@ -1036,9 +1148,14 @@ export default function App() {
                       id="profile-settings-sleep"
                       type="number"
                       inputMode="decimal"
-                      value={settings.targetSleepHours}
-                      onChange={(e) => saveSettings({ ...settings, targetSleepHours: Number(e.target.value) || 8 })}
-                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      value={isEditingProfile ? profileTargetSleepHours : settings.targetSleepHours}
+                      readOnly={!isEditingProfile}
+                      onChange={(e) => setProfileTargetSleepHours(Number(e.target.value) || 0)}
+                      className={`w-full px-3 py-2 border font-mono rounded-xl focus:outline-none transition-all ${
+                        isEditingProfile 
+                          ? 'bg-white dark:bg-slate-950 border-indigo-200 dark:border-indigo-900 ring-1 ring-indigo-50 dark:ring-indigo-950/20 text-slate-800 dark:text-slate-100 font-bold' 
+                          : 'bg-slate-100/50 dark:bg-slate-900 border-transparent text-slate-500 dark:text-slate-400 cursor-not-allowed select-none opacity-85'
+                      }`}
                     />
                   </div>
 
@@ -1053,10 +1170,15 @@ export default function App() {
                       inputMode="numeric"
                       min="1"
                       max="7"
-                      value={settings.targetExerciseDaysPerWeek || ''}
+                      value={isEditingProfile ? profileTargetExerciseDaysPerWeek : (settings.targetExerciseDaysPerWeek || '')}
+                      readOnly={!isEditingProfile}
                       placeholder="no of days"
-                      onChange={(e) => saveSettings({ ...settings, targetExerciseDaysPerWeek: Number(e.target.value) || 4 })}
-                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      onChange={(e) => setProfileTargetExerciseDaysPerWeek(Number(e.target.value) || 0)}
+                      className={`w-full px-3 py-2 border font-mono rounded-xl focus:outline-none transition-all ${
+                        isEditingProfile 
+                          ? 'bg-white dark:bg-slate-950 border-indigo-200 dark:border-indigo-900 ring-1 ring-indigo-50 dark:ring-indigo-950/20 text-slate-800 dark:text-slate-100 font-bold' 
+                          : 'bg-slate-100/50 dark:bg-slate-900 border-transparent text-slate-500 dark:text-slate-400 cursor-not-allowed select-none opacity-85'
+                      }`}
                     />
                   </div>
 
@@ -1069,9 +1191,14 @@ export default function App() {
                       id="profile-settings-exercise-duration"
                       type="number"
                       inputMode="numeric"
-                      value={settings.targetExerciseMinutes}
-                      onChange={(e) => saveSettings({ ...settings, targetExerciseMinutes: Number(e.target.value) || 30 })}
-                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      value={isEditingProfile ? profileTargetExerciseMinutes : settings.targetExerciseMinutes}
+                      readOnly={!isEditingProfile}
+                      onChange={(e) => setProfileTargetExerciseMinutes(Number(e.target.value) || 0)}
+                      className={`w-full px-3 py-2 border font-mono rounded-xl focus:outline-none transition-all ${
+                        isEditingProfile 
+                          ? 'bg-white dark:bg-slate-950 border-indigo-200 dark:border-indigo-900 ring-1 ring-indigo-50 dark:ring-indigo-950/20 text-slate-800 dark:text-slate-100 font-bold' 
+                          : 'bg-slate-100/50 dark:bg-slate-900 border-transparent text-slate-500 dark:text-slate-400 cursor-not-allowed select-none opacity-85'
+                      }`}
                     />
                   </div>
 
@@ -1085,9 +1212,14 @@ export default function App() {
                       type="number"
                       step="250"
                       inputMode="numeric"
-                      value={settings.targetWaterMl}
-                      onChange={(e) => saveSettings({ ...settings, targetWaterMl: Number(e.target.value) || 2000 })}
-                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 font-mono rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      value={isEditingProfile ? profileTargetWaterMl : settings.targetWaterMl}
+                      readOnly={!isEditingProfile}
+                      onChange={(e) => setProfileTargetWaterMl(Number(e.target.value) || 0)}
+                      className={`w-full px-3 py-2 border font-mono rounded-xl focus:outline-none transition-all ${
+                        isEditingProfile 
+                          ? 'bg-white dark:bg-slate-950 border-indigo-200 dark:border-indigo-900 ring-1 ring-indigo-50 dark:ring-indigo-950/20 text-slate-800 dark:text-slate-100 font-bold' 
+                          : 'bg-slate-100/50 dark:bg-slate-900 border-transparent text-slate-500 dark:text-slate-400 cursor-not-allowed select-none opacity-85'
+                      }`}
                     />
                   </div>
 
@@ -1098,18 +1230,20 @@ export default function App() {
                     </label>
                     <div className="grid grid-cols-3 gap-2">
                       {[250, 500, 750].map((size) => {
-                        const active = settings.defaultGlassSizeMl === size;
+                        const currentSize = isEditingProfile ? profileDefaultGlassSizeMl : settings.defaultGlassSizeMl;
+                        const active = currentSize === size;
                         return (
                           <button
                             id={`profile-glass-size-${size}`}
                             key={size}
                             type="button"
-                            onClick={() => saveSettings({ ...settings, defaultGlassSizeMl: size })}
+                            disabled={!isEditingProfile}
+                            onClick={() => setProfileDefaultGlassSizeMl(size)}
                             className={`py-1.5 px-3 rounded-xl border text-xs font-semibold font-mono transition ${
                               active
-                                ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-850 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs'
-                                : 'bg-slate-50/50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                            }`}
+                                ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs'
+                                : 'bg-slate-50/50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-450 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                            } ${!isEditingProfile ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
                           >
                             {size} ml
                           </button>
@@ -1188,8 +1322,12 @@ export default function App() {
         {/* STICKY BOTTOM TABS SELECTOR BAR - Fits exactly inside smartphone screen, responsive globally */}
         <nav
           id="app-bottom-tab-bar"
-          className={`sticky bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800/90 py-3.5 px-6 flex justify-around items-center z-40 shadow-[0_-8px_24px_rgba(15,23,42,0.02)] selection-none ${
-            isMobilePreviewFrame ? 'rounded-b-[34px]' : (isNativeAndroid ? 'rounded-none' : 'lg:rounded-2xl')
+          className={`${
+            isMobilePreviewFrame 
+              ? 'sticky bottom-0' 
+              : 'fixed bottom-0 left-0 right-0 mx-auto ' + (isNativeAndroid || isMobileOrTabletScreen ? 'w-full max-w-none' : 'max-w-4xl')
+          } bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800/90 py-3.5 px-6 flex justify-around items-center z-40 shadow-[0_-8px_24px_rgba(15,23,42,0.02)] selection-none ${
+            isMobilePreviewFrame ? 'rounded-b-[34px]' : (isNativeAndroid || isMobileOrTabletScreen ? 'rounded-none' : 'lg:rounded-t-2xl shadow-[0_-12px_40px_rgba(15,23,42,0.06)]')
           }`}
         >
           {/* Home button */}
@@ -1263,7 +1401,9 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans"
+              className={`${
+                isMobilePreviewFrame ? 'absolute' : 'fixed'
+              } inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans`}
             >
               <motion.div
                 initial={{ scale: 0.9, y: 20 }}
@@ -1316,7 +1456,9 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans"
+              className={`${
+                isMobilePreviewFrame ? 'absolute' : 'fixed'
+              } inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans`}
             >
               <motion.div
                 initial={{ scale: 0.9, y: 20 }}

@@ -1,4 +1,5 @@
-import { useState, FormEvent, useEffect, useRef } from 'react';
+import { useState, FormEvent, useEffect, useRef, ChangeEvent } from 'react';
+import Tesseract from 'tesseract.js';
 import {
   Flame,
   Plus,
@@ -11,6 +12,12 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
+  Sparkles,
+  AlertCircle,
+  Loader2,
+  Scan,
+  Camera,
+  Image,
 } from 'lucide-react';
 import { DietRecord, Meal, WaterRecord, DailyRecord, UserSettings } from '../types';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from 'recharts';
@@ -88,6 +95,8 @@ export default function DietWidget({
   const [editMealPotassium, setEditMealPotassium] = useState('');
   const [editMealFiber, setEditMealFiber] = useState('');
   const [editMealSugar, setEditMealSugar] = useState('');
+  const [editMealWeightGrams, setEditMealWeightGrams] = useState('');
+  const [baselineMeal, setBaselineMeal] = useState<Meal | null>(null);
 
   // Favorite Foods list state (persisted in localStorage)
   const [favoriteFoods, setFavoriteFoods] = useState<FavoriteFood[]>(() => {
@@ -115,9 +124,50 @@ export default function DietWidget({
   const [favRefGrams, setFavRefGrams] = useState('100');
   const [showAddFavoriteForm, setShowAddFavoriteForm] = useState(false);
 
+  // Scanner UI options
+  const [showScanOptions, setShowScanOptions] = useState(false);
+  const [showAddMealModal, setShowAddMealModal] = useState(false);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+
   // Portion Logging states for Favorite Foods
   const [favLoggingId, setFavLoggingId] = useState<string | null>(null);
   const [favLoggingGrams, setFavLoggingGrams] = useState<string>('100');
+  const [confirmDeleteFavId, setConfirmDeleteFavId] = useState<string | null>(null);
+  const [confirmDeleteMealId, setConfirmDeleteMealId] = useState<string | null>(null);
+
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
+
+  // OCR state variables
+  const [ocrScanning, setOcrScanning] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState<number | null>(null);
+  const [ocrMode, setOcrMode] = useState<'local' | 'gemini'>('local');
+  const [lastUploadedFile, setLastUploadedFile] = useState<{ base64: string; mimeType: string } | null>(null);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrResult, setOcrResult] = useState<{
+    name: string;
+    servingSizeGrams: number;
+    energyKcal: number;
+    proteinGrams: number;
+    carbsGrams: number;
+    fatGrams: number;
+    sodiumMg: number;
+    potassiumMg: number;
+    fiberGrams: number;
+    sugarGrams: number;
+  } | null>(null);
+
+  const [ocrConfirmName, setOcrConfirmName] = useState('');
+  const [ocrConfirmServingSize, setOcrConfirmServingSize] = useState('100');
+  const [ocrConfirmConsumed, setOcrConfirmConsumed] = useState('100');
+  const [ocrConfirmCalories, setOcrConfirmCalories] = useState('');
+  const [ocrConfirmProtein, setOcrConfirmProtein] = useState('');
+  const [ocrConfirmCarbs, setOcrConfirmCarbs] = useState('');
+  const [ocrConfirmFat, setOcrConfirmFat] = useState('');
+  const [ocrConfirmSodium, setOcrConfirmSodium] = useState('');
+  const [ocrConfirmPotassium, setOcrConfirmPotassium] = useState('');
+  const [ocrConfirmFiber, setOcrConfirmFiber] = useState('');
+  const [ocrConfirmSugar, setOcrConfirmSugar] = useState('');
 
   // Food Suggestions states
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -178,9 +228,331 @@ export default function DietWidget({
   // Sugar Limit: WHO/AHA guideline recommends added/free sugars to be <10% of total energy intake
   const LIMIT_SUGAR = Math.max(25, Math.round((settings.targetCalories * 0.10) / 4));
 
+  const checkDuplicateName = (nameToCheck: string): boolean => {
+    const cleanName = nameToCheck.replace(/\s*\(\s*\d+g\s*\)$/i, '').trim().toLowerCase();
+    return favoriteFoods.some(fav => fav.name.replace(/\s*\(\s*\d+g\s*\)$/i, '').trim().toLowerCase() === cleanName);
+  };
+
+  useEffect(() => {
+    if (duplicateError) {
+      const timer = setTimeout(() => {
+        setDuplicateError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [duplicateError]);
+
+  const parseTesseractText = (text: string, fileName: string) => {
+    const cleanFallbackName = fileName.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ").trim();
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+    let guessedName = cleanFallbackName;
+    const ignoredKeywords = [/nutrition/i, /facts/i, /amount/i, /serving/i, /daily/i, /value/i, /calories/i, /ingredients/i, /saturated/i, /trans/i, /cholesterol/i, /sodium/i, /carbohydrate/i, /protein/i];
+    for (const line of lines) {
+      if (!ignoredKeywords.some(keyword => keyword.test(line)) && line.length < 50 && !/^\d+$/.test(line)) {
+        guessedName = line;
+        break;
+      }
+    }
+
+    const extractValue = (pattern: RegExp, defaultVal = 0): number => {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        const parsed = parseFloat(match[1]);
+        return isNaN(parsed) ? defaultVal : parsed;
+      }
+      return defaultVal;
+    };
+
+    const calories = extractValue(/(?:calories|calorie|energy|kcal)\s*(?:from fat)?\s*[:\-=]?\s*(\d+)/i, 0);
+    const servingSizeGrams = extractValue(/(?:serving size|serv size|serving wt|serving\s*weight)\D*(\d+)\s*g/i, 100);
+    const proteinGrams = extractValue(/(?:protein|proteins|proteinas)\D*([\d.]+)\s*g/i, 0);
+    const carbsGrams = extractValue(/(?:total carbohydrate|carbohydrate|carbo|carbs|total carb)\D*([\d.]+)\s*g/i, 0);
+    const fatGrams = extractValue(/(?:total fat|fat|fats|lipid|lipides)\D*([\d.]+)\s*g/i, 0);
+    const sodiumMg = extractValue(/(?:sodium|sodio|natrium)\D*([\d.]+)\s*mg/i, 0);
+    const potassiumMg = extractValue(/(?:potassium|potasio|kalium)\D*([\d.]+)\s*mg/i, 0);
+    const fiberGrams = extractValue(/(?:dietary fiber|fiber|fibers|fibres)\D*([\d.]+)\s*g/i, 0);
+    const sugarGrams = extractValue(/(?:sugars|sugar|total sugars|sucres)\D*([\d.]+)\s*g/i, 0);
+
+    return {
+      name: guessedName,
+      servingSizeGrams: servingSizeGrams || 105,
+      energyKcal: calories,
+      proteinGrams,
+      carbsGrams,
+      fatGrams,
+      sodiumMg,
+      potassiumMg,
+      fiberGrams,
+      sugarGrams,
+    };
+  };
+
+  const handleGeminiEnhance = async () => {
+    if (!lastUploadedFile) return;
+
+    triggerHaptic(20);
+    setOcrScanning(true);
+    setOcrProgress(null);
+    setOcrError(null);
+    setOcrMode('gemini');
+
+    try {
+      const response = await fetch("/api/meal-ocr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageBase64: lastUploadedFile.base64,
+          mimeType: lastUploadedFile.mimeType,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to query server Gemini endpoint");
+      }
+
+      const data = await response.json();
+      setOcrResult({
+        name: data.name || 'Scanned Food Item',
+        servingSizeGrams: data.servingSizeGrams || 100,
+        energyKcal: data.energyKcal || 0,
+        proteinGrams: data.proteinGrams || 0,
+        carbsGrams: data.carbsGrams || 0,
+        fatGrams: data.fatGrams || 0,
+        sodiumMg: data.sodiumMg || 0,
+        potassiumMg: data.potassiumMg || 0,
+        fiberGrams: data.fiberGrams || 0,
+        sugarGrams: data.sugarGrams || 0,
+      });
+      setOcrConfirmName(data.name || 'Scanned Food Item');
+      setOcrConfirmServingSize(String(data.servingSizeGrams || 100));
+      setOcrConfirmConsumed(String(data.servingSizeGrams || 100));
+      setOcrConfirmCalories(String(data.energyKcal || 0));
+      setOcrConfirmProtein(data.proteinGrams !== undefined ? String(data.proteinGrams) : '0');
+      setOcrConfirmCarbs(data.carbsGrams !== undefined ? String(data.carbsGrams) : '0');
+      setOcrConfirmFat(data.fatGrams !== undefined ? String(data.fatGrams) : '0');
+      setOcrConfirmSodium(data.sodiumMg !== undefined ? String(data.sodiumMg) : '0');
+      setOcrConfirmPotassium(data.potassiumMg !== undefined ? String(data.potassiumMg) : '0');
+      setOcrConfirmFiber(data.fiberGrams !== undefined ? String(data.fiberGrams) : '0');
+      setOcrConfirmSugar(data.sugarGrams !== undefined ? String(data.sugarGrams) : '0');
+      triggerHaptic(40);
+    } catch (err: any) {
+      console.error("Gemini enhance error:", err);
+      setOcrError(err.message || "Could not complete the Gemini Cloud Vision OCR scan.");
+    } finally {
+      setOcrScanning(false);
+    }
+  };
+
+  const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    triggerHaptic(20);
+    setOcrScanning(true);
+    setOcrProgress(0);
+    setOcrError(null);
+    setOcrResult(null);
+    setOcrMode('local');
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      const commaIndex = base64String.indexOf(',');
+      const justBase64 = base64String.substring(commaIndex + 1);
+      setLastUploadedFile({ base64: justBase64, mimeType: file.type });
+    };
+    reader.readAsDataURL(file);
+
+    try {
+      // 1. Run local client-side Tesseract OCR inside user's browser
+      const result = await Tesseract.recognize(
+        file,
+        'eng',
+        {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              setOcrProgress(Math.round(m.progress * 100));
+            }
+          }
+        }
+      );
+
+      const text = result.data.text;
+      console.log("Raw Tesseract Text Extracted:", text);
+
+      if (!text || text.trim().length === 0) {
+        throw new Error("Tesseract did not extract any readable characters from the image.");
+      }
+
+      const parsed = parseTesseractText(text, file.name);
+
+      setOcrResult(parsed);
+      setOcrConfirmName(parsed.name);
+      setOcrConfirmServingSize(String(parsed.servingSizeGrams));
+      setOcrConfirmConsumed(String(parsed.servingSizeGrams));
+      setOcrConfirmCalories(String(parsed.energyKcal));
+      setOcrConfirmProtein(String(parsed.proteinGrams));
+      setOcrConfirmCarbs(String(parsed.carbsGrams));
+      setOcrConfirmFat(String(parsed.fatGrams));
+      setOcrConfirmSodium(String(parsed.sodiumMg));
+      setOcrConfirmPotassium(String(parsed.potassiumMg));
+      setOcrConfirmFiber(String(parsed.fiberGrams));
+      setOcrConfirmSugar(String(parsed.sugarGrams));
+
+      triggerHaptic(40);
+      setOcrScanning(false);
+      setOcrProgress(null);
+    } catch (err: any) {
+      console.warn("Local Tesseract OCR reading failed. Falling back to high-fidelity Gemini OCR cloud API.", err);
+      setOcrMode('gemini');
+      setOcrProgress(null);
+
+      // Trigger automatic high-fidelity fallback to Gemini
+      const readerFallback = new FileReader();
+      readerFallback.onloadend = async () => {
+        const base64String = readerFallback.result as string;
+        const commaIndex = base64String.indexOf(',');
+        const justBase64 = base64String.substring(commaIndex + 1);
+        const mimeType = file.type;
+
+        try {
+          const response = await fetch("/api/meal-ocr", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageBase64: justBase64, mimeType }),
+          });
+
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || "Failed to scan nutrition info image");
+          }
+
+          const data = await response.json();
+          setOcrResult({
+            name: data.name || 'Scanned Food Item',
+            servingSizeGrams: data.servingSizeGrams || 100,
+            energyKcal: data.energyKcal || 0,
+            proteinGrams: data.proteinGrams || 0,
+            carbsGrams: data.carbsGrams || 0,
+            fatGrams: data.fatGrams || 0,
+            sodiumMg: data.sodiumMg || 0,
+            potassiumMg: data.potassiumMg || 0,
+            fiberGrams: data.fiberGrams || 0,
+            sugarGrams: data.sugarGrams || 0,
+          });
+          setOcrConfirmName(data.name || 'Scanned Food Item');
+          setOcrConfirmServingSize(String(data.servingSizeGrams || 100));
+          setOcrConfirmConsumed(String(data.servingSizeGrams || 100));
+          setOcrConfirmCalories(String(data.energyKcal || 0));
+          setOcrConfirmProtein(data.proteinGrams !== undefined ? String(data.proteinGrams) : '0');
+          setOcrConfirmCarbs(data.carbsGrams !== undefined ? String(data.carbsGrams) : '0');
+          setOcrConfirmFat(data.fatGrams !== undefined ? String(data.fatGrams) : '0');
+          setOcrConfirmSodium(data.sodiumMg !== undefined ? String(data.sodiumMg) : '0');
+          setOcrConfirmPotassium(data.potassiumMg !== undefined ? String(data.potassiumMg) : '0');
+          setOcrConfirmFiber(data.fiberGrams !== undefined ? String(data.fiberGrams) : '0');
+          setOcrConfirmSugar(data.sugarGrams !== undefined ? String(data.sugarGrams) : '0');
+          triggerHaptic(40);
+        } catch (geminiErr: any) {
+          console.error("Gemini fallback scan failed:", geminiErr);
+          setOcrError("Both Tesseract local scan and Gemini cloud scan failed to read this image. Please check the image or crop it.");
+        } finally {
+          setOcrScanning(false);
+        }
+      };
+      readerFallback.readAsDataURL(file);
+    }
+  };
+
+  const handleOcrConfirmConsumedChange = (newConsumedStr: string) => {
+    setOcrConfirmConsumed(newConsumedStr);
+    const consumed = parseFloat(newConsumedStr);
+    const refSize = parseFloat(ocrConfirmServingSize);
+    if (!ocrResult || isNaN(consumed) || consumed <= 0 || isNaN(refSize) || refSize <= 0) return;
+
+    const factor = consumed / refSize;
+
+    setOcrConfirmCalories(String(Math.round(ocrResult.energyKcal * factor)));
+    setOcrConfirmProtein(ocrResult.proteinGrams !== undefined ? String(parseFloat((ocrResult.proteinGrams * factor).toFixed(1))) : '0');
+    setOcrConfirmCarbs(ocrResult.carbsGrams !== undefined ? String(parseFloat((ocrResult.carbsGrams * factor).toFixed(1))) : '0');
+    setOcrConfirmFat(ocrResult.fatGrams !== undefined ? String(parseFloat((ocrResult.fatGrams * factor).toFixed(1))) : '0');
+    setOcrConfirmSodium(ocrResult.sodiumMg !== undefined ? String(parseFloat((ocrResult.sodiumMg * factor).toFixed(1))) : '0');
+    setOcrConfirmPotassium(ocrResult.potassiumMg !== undefined ? String(parseFloat((ocrResult.potassiumMg * factor).toFixed(1))) : '0');
+    setOcrConfirmFiber(ocrResult.fiberGrams !== undefined ? String(parseFloat((ocrResult.fiberGrams * factor).toFixed(1))) : '0');
+    setOcrConfirmSugar(ocrResult.sugarGrams !== undefined ? String(parseFloat((ocrResult.sugarGrams * factor).toFixed(1))) : '0');
+  };
+
+  const handleSaveOcrConfirmedMeal = () => {
+    if (!ocrConfirmName.trim()) return;
+
+    if (checkDuplicateName(ocrConfirmName)) {
+      triggerHaptic(30);
+      setDuplicateError("Same item is present in the favorites.");
+      return;
+    }
+
+    const consumed = parseFloat(ocrConfirmConsumed) || 100;
+    const finalCals = parseInt(ocrConfirmCalories) || 0;
+    const finalProtein = ocrConfirmProtein ? parseFloat(ocrConfirmProtein) : undefined;
+    const finalCarbs = ocrConfirmCarbs ? parseFloat(ocrConfirmCarbs) : undefined;
+    const finalFat = ocrConfirmFat ? parseFloat(ocrConfirmFat) : undefined;
+    const finalSodium = ocrConfirmSodium ? parseFloat(ocrConfirmSodium) : undefined;
+    const finalPotassium = ocrConfirmPotassium ? parseFloat(ocrConfirmPotassium) : undefined;
+    const finalFiber = ocrConfirmFiber ? parseFloat(ocrConfirmFiber) : undefined;
+    const finalSugar = ocrConfirmSugar ? parseFloat(ocrConfirmSugar) : undefined;
+
+    const newMeal: Meal = {
+      id: Date.now().toString(),
+      name: `${ocrConfirmName.trim()} (${Math.round(consumed)}g)`,
+      calories: finalCals,
+      protein: finalProtein,
+      carbs: finalCarbs,
+      fat: finalFat,
+      sodium: finalSodium,
+      potassium: finalPotassium,
+      fiber: finalFiber,
+      sugar: finalSugar,
+      weightGrams: consumed,
+    };
+
+    const updatedMeals = [...record.meals, newMeal];
+    const totalCals = updatedMeals.reduce((sum, item) => sum + item.calories, 0);
+
+    onChange({
+      meals: updatedMeals,
+      calories: totalCals,
+    });
+
+    const cleanName = ocrConfirmName.trim();
+    const favIndex = favoriteFoods.findIndex(f => f.name.toLowerCase() === cleanName.toLowerCase());
+    if (favIndex !== -1) {
+      const fav = favoriteFoods[favIndex];
+      const refGrams = fav.referenceGrams || 100;
+      const scaleBack = refGrams / consumed;
+
+      const updatedFav: FavoriteFood = {
+        ...fav,
+        calories: Math.round(finalCals * scaleBack),
+        protein: finalProtein !== undefined ? parseFloat((finalProtein * scaleBack).toFixed(1)) : 0,
+        carbs: finalCarbs !== undefined ? parseFloat((finalCarbs * scaleBack).toFixed(1)) : 0,
+        fat: finalFat !== undefined ? parseFloat((finalFat * scaleBack).toFixed(1)) : 0,
+        sodium: finalSodium !== undefined ? parseFloat((finalSodium * scaleBack).toFixed(1)) : 0,
+        potassium: finalPotassium !== undefined ? parseFloat((finalPotassium * scaleBack).toFixed(1)) : 0,
+        fiber: finalFiber !== undefined ? parseFloat((finalFiber * scaleBack).toFixed(1)) : 0,
+        sugar: finalSugar !== undefined ? parseFloat((finalSugar * scaleBack).toFixed(1)) : 0,
+      };
+
+      setFavoriteFoods(prev => prev.map((f, idx) => idx === favIndex ? updatedFav : f));
+    }
+
+    setOcrResult(null);
+    triggerHaptic(30);
+  };
+
   const handleAddMeal = (e: FormEvent) => {
     e.preventDefault();
     if (!mealName.trim()) return;
+
     triggerHaptic(20);
 
     const ref = parseFloat(mealRefGrams) || 100;
@@ -271,8 +643,39 @@ export default function DietWidget({
     });
   };
 
+  const handleEditWeightGramsChange = (newWeightStr: string) => {
+    setEditMealWeightGrams(newWeightStr);
+    const newWeight = parseFloat(newWeightStr);
+    if (!baselineMeal || isNaN(newWeight) || newWeight <= 0) return;
+
+    const baseWeight = baselineMeal.weightGrams || 100;
+    const factor = newWeight / baseWeight;
+
+    // Proportionally update calories and nutrients
+    setEditMealCalories(String(Math.round(baselineMeal.calories * factor)));
+    setEditMealProtein(baselineMeal.protein !== undefined ? String(parseFloat((baselineMeal.protein * factor).toFixed(1))) : '');
+    setEditMealCarbs(baselineMeal.carbs !== undefined ? String(parseFloat((baselineMeal.carbs * factor).toFixed(1))) : '');
+    setEditMealFat(baselineMeal.fat !== undefined ? String(parseFloat((baselineMeal.fat * factor).toFixed(1))) : '');
+    setEditMealSodium(baselineMeal.sodium !== undefined ? String(parseFloat((baselineMeal.sodium * factor).toFixed(1))) : '');
+    setEditMealPotassium(baselineMeal.potassium !== undefined ? String(parseFloat((baselineMeal.potassium * factor).toFixed(1))) : '');
+    setEditMealFiber(baselineMeal.fiber !== undefined ? String(parseFloat((baselineMeal.fiber * factor).toFixed(1))) : '');
+    setEditMealSugar(baselineMeal.sugar !== undefined ? String(parseFloat((baselineMeal.sugar * factor).toFixed(1))) : '');
+
+    // Update the (Xg) suffix in the name
+    const regex = /\(\d+g\)$/;
+    if (regex.test(editMealName)) {
+      setEditMealName(editMealName.replace(regex, `(${Math.round(newWeight)}g)`));
+    } else if (regex.test(baselineMeal.name)) {
+      setEditMealName(baselineMeal.name.replace(regex, `(${Math.round(newWeight)}g)`));
+    } else {
+      const cleanName = editMealName.replace(/\s*\(\s*\d+g\s*\)$/i, '').trim();
+      setEditMealName(`${cleanName} (${Math.round(newWeight)}g)`);
+    }
+  };
+
   const startMealEditing = (item: Meal) => {
     setEditingMealId(item.id);
+    setBaselineMeal(item);
     setEditMealName(item.name);
     setEditMealCalories(String(item.calories));
     setEditMealProtein(item.protein !== undefined ? String(item.protein) : '');
@@ -282,6 +685,7 @@ export default function DietWidget({
     setEditMealPotassium(item.potassium !== undefined ? String(item.potassium) : '');
     setEditMealFiber(item.fiber !== undefined ? String(item.fiber) : '');
     setEditMealSugar(item.sugar !== undefined ? String(item.sugar) : '');
+    setEditMealWeightGrams(item.weightGrams !== undefined ? String(Math.round(item.weightGrams)) : '100');
   };
 
   const handleSaveMealEdit = (id: string) => {
@@ -298,6 +702,7 @@ export default function DietWidget({
           potassium: editMealPotassium ? parseFloat(editMealPotassium) : undefined,
           fiber: editMealFiber ? parseFloat(editMealFiber) : undefined,
           sugar: editMealSugar ? parseFloat(editMealSugar) : undefined,
+          weightGrams: editMealWeightGrams ? parseFloat(editMealWeightGrams) : undefined,
         };
       }
       return item;
@@ -309,13 +714,45 @@ export default function DietWidget({
       meals: updatedMeals,
       calories: totalCals,
     });
+
+    // Propagate parameter changes directly to Favorite foods if this meal is marked as favorite
+    const cleanName = editMealName.replace(/\s*\(\s*\d+g\s*\)$/i, '').trim();
+    const favIndex = favoriteFoods.findIndex(f => f.name.toLowerCase() === cleanName.toLowerCase());
+    if (favIndex !== -1) {
+      const fav = favoriteFoods[favIndex];
+      const refGrams = fav.referenceGrams || 100;
+      const consumedGrams = parseFloat(editMealWeightGrams) || 100;
+      const scaleBack = refGrams / consumedGrams;
+
+      const updatedFav: FavoriteFood = {
+        ...fav,
+        calories: Math.round((parseInt(editMealCalories) || 0) * scaleBack),
+        protein: editMealProtein ? parseFloat((parseFloat(editMealProtein) * scaleBack).toFixed(1)) : 0,
+        carbs: editMealCarbs ? parseFloat((parseFloat(editMealCarbs) * scaleBack).toFixed(1)) : 0,
+        fat: editMealFat ? parseFloat((parseFloat(editMealFat) * scaleBack).toFixed(1)) : 0,
+        sodium: editMealSodium ? parseFloat((parseFloat(editMealSodium) * scaleBack).toFixed(1)) : 0,
+        potassium: editMealPotassium ? parseFloat((parseFloat(editMealPotassium) * scaleBack).toFixed(1)) : 0,
+        fiber: editMealFiber ? parseFloat((parseFloat(editMealFiber) * scaleBack).toFixed(1)) : 0,
+        sugar: editMealSugar ? parseFloat((parseFloat(editMealSugar) * scaleBack).toFixed(1)) : 0,
+      };
+
+      setFavoriteFoods(prev => prev.map((f, idx) => idx === favIndex ? updatedFav : f));
+    }
+
     setEditingMealId(null);
+    setBaselineMeal(null);
   };
 
   // Add customized favorite food creator form
   const handleCreateFavorite = (e: FormEvent) => {
     e.preventDefault();
     if (!favName.trim()) return;
+
+    if (checkDuplicateName(favName)) {
+      triggerHaptic(25);
+      setDuplicateError("Same item is present in the favorites.");
+      return;
+    }
 
     const newFav: FavoriteFood = {
       id: 'custom-' + Date.now().toString(),
@@ -405,6 +842,32 @@ export default function DietWidget({
   const handleDeleteFavorite = (id: string) => {
     setFavoriteFoods((prev) => prev.filter((item) => item.id !== id));
     if (editingFavoriteId === id) setEditingFavoriteId(null);
+  };
+
+  const handleAddToFavoriteFoods = (item: Meal) => {
+    triggerHaptic(20);
+    const cleanName = item.name.replace(/\s*\(\s*\d+g\s*\)$/, '').trim();
+    const exists = favoriteFoods.some(fav => fav.name.toLowerCase() === cleanName.toLowerCase());
+    if (exists) {
+      // Toggle off if clicked again
+      setFavoriteFoods((prev) => prev.filter(fav => fav.name.toLowerCase() !== cleanName.toLowerCase()));
+      return;
+    }
+
+    const newFav: FavoriteFood = {
+      id: 'custom-' + Date.now().toString(),
+      name: cleanName,
+      calories: item.calories,
+      protein: item.protein || 0,
+      carbs: item.carbs || 0,
+      fat: item.fat || 0,
+      sodium: item.sodium || 0,
+      potassium: item.potassium || 0,
+      fiber: item.fiber || 0,
+      sugar: item.sugar || 0,
+      referenceGrams: item.weightGrams || 100,
+    };
+    setFavoriteFoods((prev) => [newFav, ...prev]);
   };
 
   // Calorie calculation percentages
@@ -544,13 +1007,13 @@ export default function DietWidget({
           <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-3.5 relative overflow-hidden ring-1 ring-slate-100 dark:ring-slate-800">
             <div
               className="bg-gradient-to-r from-sky-400 to-sky-500 h-full rounded-full transition-all duration-700"
-              style={{ width: `${Math.min((waterRecord.totalMl / 2000) * 100, 100)}%` }}
+              style={{ width: `${Math.min((waterRecord.totalMl / (settings.targetWaterMl || 2000)) * 100, 100)}%` }}
             />
           </div>
           <div className="flex justify-between text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-            <span>Goal: 2000 ml</span>
+            <span>Goal: {settings.targetWaterMl || 2000} ml</span>
             <span className="font-semibold text-sky-500 dark:text-sky-400">
-              {Math.round((waterRecord.totalMl / 2000) * 100)}%
+              {Math.round((waterRecord.totalMl / (settings.targetWaterMl || 2000)) * 100)}%
             </span>
           </div>
         </div>
@@ -592,238 +1055,140 @@ export default function DietWidget({
         </div>
       </div>
 
-      {/* 2. Interactive meal logging form with optional macronutrient and micronutrient inputs */}
+      {/* 2. Interactive meal logging action panel */}
       <div className="bg-white/75 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/85 p-5 rounded-3xl shadow-subtle dark:shadow-none space-y-4">
-        <h3 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <Flame className="w-4.5 h-4.5 text-rose-500" />
-          Log Food & Nutrients
-        </h3>
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800/60 pb-3 flex-wrap">
+          <div>
+            <h3 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <Flame className="w-4.5 h-4.5 text-rose-500" />
+              Logged Meals Today
+            </h3>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Track custom food intakes, add nutrients, or scan label using Gemini.</p>
+          </div>
+          
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(20);
+                setMealName('');
+                setMealCalories('');
+                setProtein('');
+                setCarbs('');
+                setFat('');
+                setSodium('');
+                setPotassium('');
+                setFiber('');
+                setSugar('');
+                setMealRefGrams('100');
+                setMealConsumedGrams('100');
+                setShowAddMealModal(true);
+              }}
+              className="cursor-pointer px-3.5 py-1.5 bg-rose-500 hover:bg-rose-600 text-xs font-semibold text-white rounded-xl transition flex items-center gap-1.5 shadow-md shadow-rose-500/10 shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Log Food Item</span>
+            </button>
 
-        <form onSubmit={handleAddMeal} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2 relative" ref={suggestionRef}>
-              <label className="text-[10px] text-slate-400 dark:text-slate-500 uppercase block mb-1 font-mono font-bold">Meal/Snack Description</label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowScanOptions((prev) => !prev)}
+                className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 bg-violet-500/10 hover:bg-violet-500/20 hover:text-violet-600 dark:hover:text-violet-350 border border-violet-500/25 rounded-xl text-[11.5px] font-sans font-bold text-violet-550 dark:text-violet-400 dark:border-violet-500/30 transition select-none"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-violet-500 animate-pulse" />
+                <span>Scan Nutrition Label</span>
+              </button>
+
+              {/* Hidden file inputs for Camera and Gallery */}
               <input
-                id="meal-name"
-                type="text"
-                placeholder="Avocado Salmon Sourdough"
-                value={mealName}
-                onFocus={() => setShowSuggestions(true)}
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
                 onChange={(e) => {
-                  setMealName(e.target.value);
-                  setShowSuggestions(true);
+                  handleImageUpload(e);
+                  setShowScanOptions(false);
                 }}
-                className="w-full px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-rose-300 focus:border-rose-500 text-slate-800 dark:text-slate-100"
-                autoComplete="off"
+                disabled={ocrScanning}
+              />
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  handleImageUpload(e);
+                  setShowScanOptions(false);
+                }}
+                disabled={ocrScanning}
               />
 
-              {/* Modern Custom Suggestions Dropdown */}
-              {showSuggestions && matchingSuggestions.length > 0 && (
-                <div 
-                  id="meal-autofill-suggestions"
-                  className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-top-2 duration-150"
-                >
-                  <div className="flex items-center justify-between px-2.5 py-1 text-[9px] uppercase font-mono font-bold text-slate-450 border-b border-slate-100 dark:border-slate-800/50 pb-1.5 mb-1.5">
-                    <span>Autofill Favorites</span>
-                    <span className="bg-rose-500/10 text-rose-500 dark:text-rose-450 px-1.5 py-0.5 rounded-full text-[8px] font-mono leading-none">
-                      {matchingSuggestions.length} found
-                    </span>
-                  </div>
-
-                  {matchingSuggestions.map((suggestion) => (
+              {/* Popup drop-down for selections */}
+              {showScanOptions && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-30" 
+                    onClick={() => setShowScanOptions(false)} 
+                  />
+                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-2 z-40 space-y-1 animate-in fade-in slide-in-from-top-1 duration-150 text-left">
                     <button
-                      key={suggestion.id}
                       type="button"
                       onClick={() => {
-                        triggerHaptic(12);
-                        setMealName(suggestion.name);
-                        setMealCalories(String(suggestion.calories));
-                        setProtein(suggestion.protein !== undefined ? String(suggestion.protein) : '');
-                        setCarbs(suggestion.carbs !== undefined ? String(suggestion.carbs) : '');
-                        setFat(suggestion.fat !== undefined ? String(suggestion.fat) : '');
-                        setSodium(suggestion.sodium !== undefined ? String(suggestion.sodium) : '');
-                        setPotassium(suggestion.potassium !== undefined ? String(suggestion.potassium) : '');
-                        setFiber(suggestion.fiber !== undefined ? String(suggestion.fiber) : '');
-                        setSugar(suggestion.sugar !== undefined ? String(suggestion.sugar) : '');
-                        setMealRefGrams(String(suggestion.referenceGrams || 100));
-                        setMealConsumedGrams(String(suggestion.referenceGrams || 100));
-                        setShowSuggestions(false);
+                        cameraInputRef.current?.click();
                       }}
-                      className="w-full text-left px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/45 rounded-xl transition-all block group space-y-1.5"
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-violet-500/15 hover:text-violet-600 rounded-xl transition flex items-center gap-2 cursor-pointer"
                     >
-                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block group-hover:text-rose-500 transition-colors truncate">
-                        {suggestion.name}
-                      </span>
-
-                      <div className="flex items-center justify-between gap-2">
-                        {/* Column 1: Energy & Base */}
-                        <div className="flex gap-2 text-[10px] font-mono text-slate-400 dark:text-slate-500">
-                          <span className="font-semibold text-slate-600 dark:text-slate-400">{suggestion.calories} kcal</span>
-                          <span>•</span>
-                          <span>{suggestion.referenceGrams || 100}g base</span>
-                        </div>
-
-                        {/* Column 2: Nutrients */}
-                        <div className="flex gap-1.5 text-[9px] font-mono text-slate-450 dark:text-slate-500 bg-slate-100/60 dark:bg-slate-800/35 px-2 py-0.5 rounded-lg group-hover:bg-rose-500/10 group-hover:text-rose-500 dark:group-hover:text-rose-450 transition-all">
-                          <span>P:{suggestion.protein || 0}g</span>
-                          <span>C:{suggestion.carbs || 0}g</span>
-                          <span>F:{suggestion.fat || 0}g</span>
-                        </div>
-                      </div>
+                      <Camera className="w-4 h-4 text-violet-500" />
+                      <span>Camera (Take Photo)</span>
                     </button>
-                  ))}
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        galleryInputRef.current?.click();
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-violet-500/15 hover:text-violet-600 rounded-xl transition flex items-center gap-2 cursor-pointer"
+                    >
+                      <Image className="w-4 h-4 text-violet-500" />
+                      <span>Gallery (Upload Image)</span>
+                    </button>
+                  </div>
+                </>
               )}
             </div>
-            <div>
-              <label className="text-[10px] text-slate-400 dark:text-slate-500 uppercase block mb-1 font-mono font-bold">Energy (kcal)</label>
-              <input
-                id="meal-calories"
-                type="number"
-                inputMode="numeric"
-                placeholder="420"
-                value={mealCalories}
-                onChange={(e) => setMealCalories(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-rose-300 focus:border-rose-500 text-slate-800 dark:text-slate-100 font-mono"
-              />
-            </div>
           </div>
+        </div>
 
-          {/* Grams and Portion controls inside form */}
-          <div className="grid grid-cols-2 gap-3 bg-rose-50/25 dark:bg-rose-950/10 border border-rose-100/50 dark:border-rose-900/30 p-3 rounded-2xl">
-            <div>
-              <label className="text-[10px] text-rose-600 dark:text-rose-400 uppercase block mb-1 font-mono font-bold">Reference Weight (g)</label>
-              <input
-                id="meal-ref-grams"
-                type="number"
-                inputMode="numeric"
-                placeholder="100"
-                value={mealRefGrams}
-                onChange={(e) => setMealRefGrams(e.target.value)}
-                className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-850 dark:text-slate-100 font-mono"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-rose-600 dark:text-rose-400 uppercase block mb-1 font-mono font-bold">Grams Consumed (g)</label>
-              <input
-                id="meal-consumed-grams"
-                type="number"
-                inputMode="numeric"
-                placeholder="100"
-                value={mealConsumedGrams}
-                onChange={(e) => setMealConsumedGrams(e.target.value)}
-                className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-850 dark:text-slate-100 font-mono"
-              />
-            </div>
+        {duplicateError && (
+          <div className="flex items-center gap-2 p-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-xs text-rose-600 dark:text-rose-400 font-sans font-medium animate-in fade-in duration-200 text-left">
+            <AlertCircle className="w-4.5 h-4.5 text-rose-500 flex-shrink-0" />
+            <span className="flex-grow">{duplicateError}</span>
+            <button 
+              type="button" 
+              onClick={() => setDuplicateError(null)} 
+              className="px-1 text-rose-600 dark:text-rose-400 font-bold"
+            >
+              &times;
+            </button>
           </div>
+        )}
 
-          {/* Toggle for Macros and Micros */}
-          <button
-            id="toggle-nutrients"
-            type="button"
-            onClick={() => setShowAdvancedNutrients(!showAdvancedNutrients)}
-            className="flex items-center gap-1 text-xs text-indigo-500 dark:text-indigo-400 font-semibold hover:underline"
-          >
-            <span>{showAdvancedNutrients ? 'Hide' : 'Add'} Macro & Micro Nutrients</span>
-            {showAdvancedNutrients ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
+        {ocrError && (
+          <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-xs text-amber-600 dark:text-amber-400 font-sans font-medium animate-in fade-in duration-200 text-left">
+            <AlertCircle className="w-4.5 h-4.5 text-amber-500 flex-shrink-0" />
+            <span className="flex-grow">{ocrError}</span>
+            <button 
+              type="button" 
+              onClick={() => setOcrError(null)} 
+              className="px-1 text-amber-600 dark:text-amber-450 font-bold"
+            >
+              &times;
+            </button>
+          </div>
+        )}
 
-          {showAdvancedNutrients && (
-            <div className="grid grid-cols-4 gap-1 pb-4 px-4 pt-1 bg-slate-50/40 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/60 rounded-2xl animate-in fade-in duration-200">
-              <div className="flex flex-col justify-end">
-                <label className="text-[9px] text-slate-400 dark:text-slate-500 uppercase flex items-end h-8 mb-1 font-mono font-semibold">Protein (g)</label>
-                <input
-                   type="number"
-                   inputMode="decimal"
-                   step="0.1"
-                   placeholder="24"
-                   value={protein}
-                   onChange={(e) => setProtein(e.target.value)}
-                   className="w-full p-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
-                />
-              </div>
-              <div className="flex flex-col justify-end">
-                <label className="text-[9px] text-slate-400 dark:text-slate-500 uppercase flex items-end h-8 mb-1 font-mono font-semibold">Carbs (g)</label>
-                <input
-                   type="number"
-                   inputMode="decimal"
-                   step="0.1"
-                   placeholder="45"
-                   value={carbs}
-                   onChange={(e) => setCarbs(e.target.value)}
-                   className="w-full p-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
-                />
-              </div>
-              <div className="flex flex-col justify-end">
-                <label className="text-[9px] text-slate-400 dark:text-slate-500 uppercase flex items-end h-8 mb-1 font-mono font-semibold">Fat (g)</label>
-                <input
-                   type="number"
-                   inputMode="decimal"
-                   step="0.1"
-                   placeholder="12"
-                   value={fat}
-                   onChange={(e) => setFat(e.target.value)}
-                   className="w-full p-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
-                />
-              </div>
-              <div className="flex flex-col justify-end">
-                <label className="text-[9px] text-slate-400 dark:text-slate-500 uppercase flex items-end h-8 mb-1 font-mono font-semibold">Sugar (g)</label>
-                <input
-                   type="number"
-                   inputMode="decimal"
-                   step="0.1"
-                   placeholder="5"
-                   value={sugar}
-                   onChange={(e) => setSugar(e.target.value)}
-                   className="w-full p-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
-                />
-              </div>
-              <div className="flex flex-col justify-end">
-                <label className="text-[9px] text-slate-400 dark:text-slate-500 uppercase flex items-end h-8 mb-1 font-mono font-semibold">Fiber (g)</label>
-                <input
-                   type="number"
-                   inputMode="decimal"
-                   step="0.1"
-                   placeholder="6.5"
-                   value={fiber}
-                   onChange={(e) => setFiber(e.target.value)}
-                   className="w-full p-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
-                />
-              </div>
-              <div className="flex flex-col justify-end">
-                <label className="text-[9px] text-slate-400 dark:text-slate-500 uppercase flex items-end h-8 mb-1 font-mono font-semibold">Na (mg)</label>
-                <input
-                   type="number"
-                   inputMode="numeric"
-                   placeholder="340"
-                   value={sodium}
-                   onChange={(e) => setSodium(e.target.value)}
-                   className="w-full p-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
-                />
-              </div>
-              <div className="flex flex-col justify-end">
-                <label className="text-[9px] text-slate-400 dark:text-slate-500 uppercase flex items-end h-8 mb-1 font-mono font-semibold">K (mg)</label>
-                <input
-                   type="number"
-                   inputMode="numeric"
-                   placeholder="420"
-                   value={potassium}
-                   onChange={(e) => setPotassium(e.target.value)}
-                   className="w-full p-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
-                />
-              </div>
-            </div>
-          )}
 
-          <button
-            id="submit-meal-btn"
-            type="submit"
-            className="w-full py-2 bg-rose-500 hover:bg-rose-600 block text-xs font-semibold text-white rounded-xl transition shadow-md shadow-rose-500/10 flex items-center justify-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add to Today's Logs</span>
-          </button>
-        </form>
 
         {/* List of active today's items */}
         {record.meals.length > 0 && (
@@ -831,175 +1196,71 @@ export default function DietWidget({
             <span className="text-[10px] uppercase font-mono tracking-wider font-bold text-slate-400 dark:text-slate-500 block">Logged meals today</span>
             <div className="max-h-[30vh] overflow-y-auto space-y-2 pr-1">
               {record.meals.map((item) => {
-                const isEditing = editingMealId === item.id;
                 return (
                   <div
                     key={item.id}
                     className="flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl hover:border-slate-200 dark:hover:border-slate-700 transition"
                   >
-                    {isEditing ? (
-                       <div className="space-y-2.5">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                           <div className="sm:col-span-2">
-                            <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block font-bold">Meal Name</span>
-                            <input
-                              type="text"
-                              className="w-full px-2.5 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-700 dark:text-slate-100"
-                              value={editMealName}
-                              onChange={(e) => setEditMealName(e.target.value)}
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block font-bold">Energy (kcal)</span>
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              className="w-full px-2.5 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-700 dark:text-slate-100 font-mono"
-                              value={editMealCalories}
-                              onChange={(e) => setEditMealCalories(e.target.value)}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2 text-[10px]">
-                          <div>
-                            <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block font-bold">Protein (g)</span>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              step="0.1"
-                              className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                              value={editMealProtein}
-                              onChange={(e) => setEditMealProtein(e.target.value)}
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block font-bold">Carbs (g)</span>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              step="0.1"
-                              className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                              value={editMealCarbs}
-                              onChange={(e) => setEditMealCarbs(e.target.value)}
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block font-bold">Fat (g)</span>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              step="0.1"
-                              className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                              value={editMealFat}
-                              onChange={(e) => setEditMealFat(e.target.value)}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-2 text-[10px]">
-                          <div>
-                            <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block font-bold">Sugar (g)</span>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              step="0.1"
-                              className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                              placeholder="Opt"
-                              value={editMealSugar}
-                              onChange={(e) => setEditMealSugar(e.target.value)}
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block font-bold">Fiber (g)</span>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              step="0.1"
-                              className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                              placeholder="Opt"
-                              value={editMealFiber}
-                              onChange={(e) => setEditMealFiber(e.target.value)}
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block font-bold">Na (mg)</span>
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                              placeholder="Opt"
-                              value={editMealSodium}
-                              onChange={(e) => setEditMealSodium(e.target.value)}
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block font-bold">K (mg)</span>
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                              placeholder="Opt"
-                              value={editMealPotassium}
-                              onChange={(e) => setEditMealPotassium(e.target.value)}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2 pt-3 px-1 border-t border-slate-200 dark:border-slate-800/40">
-                          <button
-                            type="button"
-                            onClick={() => handleSaveMealEdit(item.id)}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-3 py-1.5 text-[10px] rounded-lg transition"
-                          >
-                            Save Changes
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingMealId(null)}
-                            className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-3 py-1.5 text-[10px] rounded-lg transition"
-                          >
-                            Cancel
-                          </button>
-                        </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col gap-0.5 max-w-[80%]">
+                        <span className="font-sans font-semibold text-slate-800 dark:text-slate-200 truncate">{item.name}</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                          {item.calories} kcal
+                          {item.protein !== undefined && ` • ${item.protein}g P`}
+                          {item.carbs !== undefined && ` • ${item.carbs}g C`}
+                          {item.fat !== undefined && ` • ${item.fat}g F`}
+                          {item.sugar !== undefined && ` • ${item.sugar}g Sugar`}
+                          {item.sodium !== undefined && ` • ${item.sodium}mg Na`}
+                          {item.potassium !== undefined && ` • ${item.potassium}mg K`}
+                          {item.fiber !== undefined && ` • ${item.fiber}g F`}
+                        </span>
                       </div>
-                    ) : (
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex flex-col gap-0.5 max-w-[80%]">
-                          <span className="font-sans font-semibold text-slate-800 dark:text-slate-200 truncate">{item.name}</span>
-                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-                            {item.calories} kcal
-                            {item.protein !== undefined && ` • ${item.protein}g P`}
-                            {item.carbs !== undefined && ` • ${item.carbs}g C`}
-                            {item.fat !== undefined && ` • ${item.fat}g F`}
-                            {item.sugar !== undefined && ` • ${item.sugar}g Sugar`}
-                            {item.sodium !== undefined && ` • ${item.sodium}mg Na`}
-                            {item.potassium !== undefined && ` • ${item.potassium}mg K`}
-                            {item.fiber !== undefined && ` • ${item.fiber}g F`}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button
-                            id={`edit-logged-${item.id}`}
-                            type="button"
-                            onClick={() => startMealEditing(item)}
-                            className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition"
-                            title="Edit meal records"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            id={`delete-logged-${item.id}`}
-                            type="button"
-                            onClick={() => handleDeleteMeal(item.id)}
-                            className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition"
-                            title="Remove meal log"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {(() => {
+                          const cleanNameForFav = item.name.replace(/\s*\(\s*\d+g\s*\)$/i, '').trim().toLowerCase();
+                          const isAddedToFav = favoriteFoods.some(fav => {
+                            const cleanFavName = fav.name.replace(/\s*\(\s*\d+g\s*\)$/i, '').trim().toLowerCase();
+                            return cleanFavName === cleanNameForFav;
+                          });
+                          return (
+                            <button
+                              id={`fav-toggle-logged-${item.id}`}
+                              type="button"
+                              onClick={() => handleAddToFavoriteFoods(item)}
+                              className={`p-1.5 rounded-lg transition ${
+                                isAddedToFav
+                                  ? 'text-rose-500 bg-rose-50 dark:bg-rose-950/30'
+                                  : 'text-slate-400 dark:text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20'
+                              }`}
+                              title={isAddedToFav ? "Remove from Favorites" : "Add to Favorites"}
+                            >
+                              <Heart className={`w-4 h-4 ${isAddedToFav ? 'fill-rose-500' : ''}`} />
+                            </button>
+                          );
+                        })()}
+                        <button
+                          id={`edit-logged-${item.id}`}
+                          type="button"
+                          onClick={() => startMealEditing(item)}
+                          className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition"
+                          title="Edit meal records"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          id={`delete-logged-${item.id}`}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic(20);
+                            setConfirmDeleteMealId(item.id);
+                          }}
+                          className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition"
+                          title="Remove meal log"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                    )}
+                    </div>
                   </div>
                 );
               })}
@@ -1018,143 +1279,12 @@ export default function DietWidget({
           <button
             id="toggle-add-favorite-form"
             type="button"
-            onClick={() => setShowAddFavoriteForm(!showAddFavoriteForm)}
-            className="text-xs text-indigo-500 dark:text-indigo-400 font-semibold hover:underline flex items-center gap-1"
+            onClick={() => setShowAddFavoriteForm(true)}
+            className="text-xs text-indigo-500 dark:text-indigo-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
           >
-            {showAddFavoriteForm ? 'Close Editor' : '+ Add Favorite Item'}
+            + Add Favorite Item
           </button>
         </div>
-
-        {/* Favorite Creator form */}
-        {showAddFavoriteForm && (
-          <form onSubmit={handleCreateFavorite} className="pb-4 px-4 pt-1 bg-slate-50/50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-            <span className="text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 uppercase block">Create New Food Card</span>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
-              <div className="sm:col-span-2">
-                <span className="text-[8px] text-slate-400 block font-mono">Name</span>
-                <input
-                  type="text"
-                  placeholder="Food Name"
-                  value={favName}
-                  onChange={(e) => setFavName(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100"
-                />
-              </div>
-              <div>
-                <span className="text-[8px] text-slate-400 block font-mono">Base(g)</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="Base Weight (g)"
-                  value={favRefGrams}
-                  onChange={(e) => setFavRefGrams(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
-                />
-              </div>
-              <div>
-                <span className="text-[8px] text-slate-400 block font-mono">kcal</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="Energy (kcal)"
-                  value={favCalories}
-                  onChange={(e) => setFavCalories(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-4 gap-2 text-xs">
-              <div>
-                <span className="text-[8px] text-slate-400 block font-mono">Pro(g)</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  placeholder="Protein g"
-                  value={favProtein}
-                  onChange={(e) => setFavProtein(e.target.value)}
-                  className="w-full p-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100"
-                />
-              </div>
-              <div>
-                <span className="text-[8px] text-slate-400 block font-mono">Carbs(g)</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  placeholder="Carbs g"
-                  value={favCarbs}
-                  onChange={(e) => setFavCarbs(e.target.value)}
-                  className="w-full p-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100"
-                />
-              </div>
-              <div>
-                <span className="text-[8px] text-slate-400 block font-mono">Fat(g)</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  placeholder="Fat g"
-                  value={favFat}
-                  onChange={(e) => setFavFat(e.target.value)}
-                  className="w-full p-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100"
-                />
-              </div>
-              <div>
-                <span className="text-[8px] text-slate-400 block font-mono">Sugar(g)</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  placeholder="Sugar g"
-                  value={favSugar}
-                  onChange={(e) => setFavSugar(e.target.value)}
-                  className="w-full p-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100"
-                />
-              </div>
-              <div>
-                <span className="text-[8px] text-slate-400 block font-mono">Fiber(g)</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step="0.1"
-                  placeholder="Fiber g"
-                  value={favFiber}
-                  onChange={(e) => setFavFiber(e.target.value)}
-                  className="w-full p-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100"
-                />
-              </div>
-              <div>
-                <span className="text-[8px] text-slate-400 block font-mono">Na(mg)</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="Na mg"
-                  value={favSodium}
-                  onChange={(e) => setFavSodium(e.target.value)}
-                  className="w-full p-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100"
-                />
-              </div>
-              <div>
-                <span className="text-[8px] text-slate-400 block font-mono">K(mg)</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="K mg"
-                  value={favPotassium}
-                  onChange={(e) => setFavPotassium(e.target.value)}
-                  className="w-full p-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100"
-                />
-              </div>
-            </div>
-            <button
-              id="submit-favorite-creation-btn"
-              type="submit"
-              className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold block transition"
-            >
-              Save to Favorites
-            </button>
-          </form>
-        )}
 
         {/* Favorite Food List / Grid matching design guidelines */}
         <div className="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto pr-1">
@@ -1168,132 +1298,7 @@ export default function DietWidget({
                 key={fav.id}
                 className="p-3 border border-slate-100 dark:border-slate-800 bg-slate-50/55 dark:bg-slate-900/40 rounded-2xl flex flex-col justify-between gap-2.5 transition group hover:border-slate-200 dark:hover:border-slate-700"
               >
-                {isEditing ? (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      className="w-full px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-700 dark:text-slate-200"
-                      value={favName}
-                      onChange={(e) => setFavName(e.target.value)}
-                    />
-                    <div className="grid grid-cols-5 gap-1 text-[10px]">
-                      <div>
-                        <span className="text-[8px] text-slate-400 block font-mono">Base(g)</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-center"
-                          value={favRefGrams}
-                          onChange={(e) => setFavRefGrams(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[8px] text-slate-400 block font-mono">kcal</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-center"
-                          value={favCalories}
-                          onChange={(e) => setFavCalories(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[8px] text-slate-400 block font-mono">Pro(g)</span>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-center"
-                          value={favProtein}
-                          onChange={(e) => setFavProtein(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[8px] text-slate-400 block font-mono">Carb(g)</span>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-center"
-                          value={favCarbs}
-                          onChange={(e) => setFavCarbs(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[8px] text-slate-400 block font-mono">Fat(g)</span>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-center"
-                          value={favFat}
-                          onChange={(e) => setFavFat(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    {/* micro edit inline */}
-                    <div className="grid grid-cols-4 gap-1 text-[9px] text-slate-400 mt-1">
-                      <div>
-                        <span className="text-[8px] text-slate-400 block font-mono">Sugar(g)</span>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          placeholder="Sugar g"
-                          className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                          value={favSugar}
-                          onChange={(e) => setFavSugar(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[8px] text-slate-400 block font-mono">Fiber(g)</span>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          placeholder="Fiber g"
-                          className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                          value={favFiber}
-                          onChange={(e) => setFavFiber(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[8px] text-slate-400 block font-mono">Na(mg)</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          placeholder="Na mg"
-                          className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                          value={favSodium}
-                          onChange={(e) => setFavSodium(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[8px] text-slate-400 block font-mono">K(mg)</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          placeholder="K mg"
-                          className="w-full p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded"
-                          value={favPotassium}
-                          onChange={(e) => setFavPotassium(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex gap-1.5 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => handleSaveFavEdit(fav.id)}
-                        className="text-[10px] bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-2 py-1 rounded"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingFavoriteId(null)}
-                        className="text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-1 rounded"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : isLogging ? (
+                {isLogging ? (
                   /* Interactive Portion Logging Inline Form panel */
                   <div className="space-y-3.5 animate-in fade-in zoom-in-95 duration-150">
                     <div className="flex justify-between items-center">
@@ -1419,7 +1424,7 @@ export default function DietWidget({
                         <button
                           id={`delete-favorite-${fav.id}`}
                           type="button"
-                          onClick={() => handleDeleteFavorite(fav.id)}
+                          onClick={() => setConfirmDeleteFavId(fav.id)}
                           title="Delete favorite card"
                           className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
                         >
@@ -1469,6 +1474,1014 @@ export default function DietWidget({
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* 5. OCR Loading/Scanning Overlay Modal */}
+      {ocrScanning && (
+        <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-6 space-y-4 text-center animate-in zoom-in-95 duration-200 font-sans">
+            <div className="mx-auto p-3 bg-violet-500/10 dark:bg-violet-500/20 rounded-full w-fit animate-bounce">
+              <Scan className="w-6 h-6 text-violet-500 animate-pulse" />
+            </div>
+            <div className="flex flex-col items-center gap-1.5 w-full">
+              <div className="flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 text-violet-550 dark:text-violet-400 animate-spin" />
+                <span className="text-xs font-bold text-slate-750 dark:text-slate-300">
+                  {ocrMode === 'local' 
+                    ? `Tesseract.js OCR engine: ${ocrProgress !== null ? ocrProgress : 0}%` 
+                    : "Refining label layout with Gemini AI..."}
+                </span>
+              </div>
+              {ocrMode === 'local' && ocrProgress !== null && (
+                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-0.5 shadow-inner max-w-[200px]">
+                  <div 
+                    className="bg-violet-500 h-full rounded-full transition-all duration-300 shadow-md shadow-violet-500/30"
+                    style={{ width: `${ocrProgress}%` }}
+                  />
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono leading-normal">
+              {ocrMode === 'local' 
+                ? "Extracting nutrition metrics inside your browser safely. Unaligned layouts automatically utilize Gemini cloud fallback." 
+                : "Scanning structured calorie & macronutrient factors layout details from label matrix."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* 6. OCR Confirmation Modal Popup */}
+      {ocrResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-300 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-4 animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto text-left font-sans">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3 flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-violet-600 dark:text-violet-400 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-violet-500 animate-pulse" />
+                  Scanned Facts Confirmation
+                </span>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold font-mono border ${
+                  ocrMode === 'local' 
+                    ? 'bg-blue-500/10 border-blue-500/25 text-blue-600 dark:text-blue-400' 
+                    : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400'
+                }`}>
+                  {ocrMode === 'local' ? '⚡ Tesseract.js Client OCR' : '✨ Gemini AI Enhanced'}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11.5px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              We parsed these details from your label image. Please adjust the <strong>grams consumed</strong> below—it will proportionately rescale the calories & nutrients to match what you actually ate!
+            </p>
+
+            <div className="space-y-3">
+              {/* Name field */}
+              <div>
+                <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold">Food Description</span>
+                <input
+                  type="text"
+                  value={ocrConfirmName}
+                  onChange={(e) => setOcrConfirmName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-violet-500 text-slate-800 dark:text-slate-100 font-medium"
+                />
+              </div>
+
+              {/* Servings vs consumed weight */}
+              <div className="grid grid-cols-2 gap-3 bg-violet-500/5 dark:bg-violet-500/10 border border-violet-500/15 p-3 rounded-2xl">
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-violet-600 dark:text-violet-400 block mb-1 font-bold">Serving Weight (g)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={ocrConfirmServingSize}
+                    onChange={(e) => setOcrConfirmServingSize(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-indigo-500 dark:text-indigo-400 block mb-1 font-bold">Grams Consumed (g)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={ocrConfirmConsumed}
+                    onChange={(e) => handleOcrConfirmConsumedChange(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-indigo-200 dark:border-indigo-900 rounded-lg text-slate-900 dark:text-slate-100 font-mono font-bold focus:ring-1 focus:ring-indigo-400"
+                  />
+                </div>
+              </div>
+
+              {/* Calories and macros */}
+              <div className="grid grid-cols-4 gap-2">
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold truncate">Energy (kcal)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={ocrConfirmCalories}
+                    onChange={(e) => setOcrConfirmCalories(e.target.value)}
+                    className="w-full p-2 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold truncate font-mono">Protein (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={ocrConfirmProtein}
+                    onChange={(e) => setOcrConfirmProtein(e.target.value)}
+                    className="w-full p-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold truncate font-mono">Carbs (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={ocrConfirmCarbs}
+                    onChange={(e) => setOcrConfirmCarbs(e.target.value)}
+                    className="w-full p-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold truncate font-mono">Fat (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={ocrConfirmFat}
+                    onChange={(e) => setOcrConfirmFat(e.target.value)}
+                    className="w-full p-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Micro-nutrients row */}
+              <div className="grid grid-cols-4 gap-2 text-[10px]">
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold truncate font-mono">Sodium (mg)</span>
+                  <input
+                    type="number"
+                    value={ocrConfirmSodium}
+                    onChange={(e) => setOcrConfirmSodium(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold truncate font-mono">Potassium (mg)</span>
+                  <input
+                    type="number"
+                    value={ocrConfirmPotassium}
+                    onChange={(e) => setOcrConfirmPotassium(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold truncate font-mono">Fiber (g)</span>
+                  <input
+                    type="number"
+                    value={ocrConfirmFiber}
+                    onChange={(e) => setOcrConfirmFiber(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold truncate font-mono">Sugar (g)</span>
+                  <input
+                    type="number"
+                    value={ocrConfirmSugar}
+                    onChange={(e) => setOcrConfirmSugar(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Gemini Upgrade Prompt Card */}
+            {ocrMode === 'local' && lastUploadedFile && (
+              <div className="p-3 bg-violet-500/5 dark:bg-violet-500/10 border border-dashed border-violet-500/20 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs leading-relaxed">
+                <div className="text-slate-500 dark:text-slate-400 text-left">
+                  <span className="font-bold text-slate-705 dark:text-slate-300 flex items-center gap-1 mb-0.5">
+                    <Sparkles className="w-3.5 h-3.5 text-violet-500 animate-pulse" />
+                    Layout not scanned perfectly?
+                  </span>
+                  Refine nutritional matrices & dense columns with our cloud multimodal AI verification.
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGeminiEnhance}
+                  className="px-3 py-1.5 text-[11px] font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-xl transition flex-shrink-0 cursor-pointer shadow-sm shadow-violet-500/20 active:scale-95 duration-100 animate-pulse"
+                >
+                  Enhance with Gemini
+                </button>
+              </div>
+            )}
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setOcrResult(null)}
+                className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveOcrConfirmedMeal}
+                className="flex-[2] py-2 bg-violet-600 hover:bg-violet-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-violet-500/15 flex items-center justify-center gap-2 cursor-pointer active:scale-[99%]"
+              >
+                <Check className="w-4 h-4" />
+                <span>Confirm & Log Meal</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP 1: Add Favorite Item Modal */}
+      {showAddFavoriteForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-350">
+          <form 
+            onSubmit={handleCreateFavorite} 
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans"
+          >
+            <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800/80 pb-2.5">
+              <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-indigo-650 dark:text-indigo-400 flex items-center gap-1.5">
+                <Heart className="w-4.5 h-4.5 text-rose-500 fill-rose-500 animate-pulse" />
+                Add Favorite Item
+              </span>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="sm:col-span-2">
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold">Food Description</span>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Greek Yogurt Cup"
+                    value={favName}
+                    onChange={(e) => setFavName(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-450 text-slate-800 dark:text-slate-100"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold">Serving (g)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    required
+                    value={favRefGrams}
+                    onChange={(e) => setFavRefGrams(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-450 text-slate-800 dark:text-slate-100 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">kcal</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="0"
+                    required
+                    value={favCalories}
+                    onChange={(e) => setFavCalories(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Pro (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    placeholder="0"
+                    value={favProtein}
+                    onChange={(e) => setFavProtein(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Carb (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    placeholder="0"
+                    value={favCarbs}
+                    onChange={(e) => setFavCarbs(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Fat (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    placeholder="0"
+                    value={favFat}
+                    onChange={(e) => setFavFat(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+              </div>
+
+              {/* Advanced Micros row */}
+              <div className="grid grid-cols-4 gap-2 text-[10px] pt-1 border-t border-slate-100 dark:border-slate-800/40">
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-bold">Sugar (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    placeholder="0"
+                    value={favSugar}
+                    onChange={(e) => setFavSugar(e.target.value)}
+                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-bold">Fiber (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    placeholder="0"
+                    value={favFiber}
+                    onChange={(e) => setFavFiber(e.target.value)}
+                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-mono font-bold">Na (mg)</span>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={favSodium}
+                    onChange={(e) => setFavSodium(e.target.value)}
+                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-mono font-bold">K (mg)</span>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={favPotassium}
+                    onChange={(e) => setFavPotassium(e.target.value)}
+                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 pt-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddFavoriteForm(false);
+                  setFavName('');
+                  setFavCalories('');
+                  setFavProtein('');
+                  setFavCarbs('');
+                  setFavFat('');
+                  setFavSodium('');
+                  setFavPotassium('');
+                  setFavFiber('');
+                  setFavSugar('');
+                  setFavRefGrams('100');
+                }}
+                className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-[2] py-2 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-indigo-550/15 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Save Item</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* POPUP 2: Edit Favorite Item Modal */}
+      {editingFavoriteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-350">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans">
+            <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800/80 pb-2.5">
+              <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                <Edit3 className="w-4.5 h-4.5 text-indigo-500 animate-pulse" />
+                Edit Favorite Food Card
+              </span>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold">Food Description</span>
+                <input
+                  type="text"
+                  value={favName}
+                  onChange={(e) => setFavName(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-455 text-slate-800 dark:text-slate-100 font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/15 p-2.5 rounded-2xl">
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-mono">Ref Serving (g)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={favRefGrams}
+                    onChange={(e) => setFavRefGrams(e.target.value)}
+                    className="w-full px-2 py-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-mono font-bold">Energy (kcal)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={favCalories}
+                    onChange={(e) => setFavCalories(e.target.value)}
+                    className="w-full px-2 py-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Pro (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={favProtein}
+                    onChange={(e) => setFavProtein(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Carb (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={favCarbs}
+                    onChange={(e) => setFavCarbs(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Fat (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={favFat}
+                    onChange={(e) => setFavFat(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+              </div>
+
+              {/* Micros Details */}
+              <div className="grid grid-cols-4 gap-2 text-[10px] pt-1.5 border-t border-slate-100 dark:border-slate-800/40">
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-bold">Sugar (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={favSugar}
+                    onChange={(e) => setFavSugar(e.target.value)}
+                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-bold">Fiber (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={favFiber}
+                    onChange={(e) => setFavFiber(e.target.value)}
+                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-mono font-bold">Na (mg)</span>
+                  <input
+                    type="number"
+                    value={favSodium}
+                    onChange={(e) => setFavSodium(e.target.value)}
+                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-mono font-bold">K (mg)</span>
+                  <input
+                    type="number"
+                    value={favPotassium}
+                    onChange={(e) => setFavPotassium(e.target.value)}
+                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 pt-2.5">
+              <button
+                type="button"
+                onClick={() => setEditingFavoriteId(null)}
+                className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveFavEdit(editingFavoriteId)}
+                className="flex-[2] py-2 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-indigo-550/15 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Save Changes</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP: Confirm Delete Favorite Food Modal */}
+      {confirmDeleteFavId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans">
+            <div className="space-y-2">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-50">Delete Favorite Food?</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Are you sure you want to delete <span className="font-semibold text-slate-850 dark:text-slate-200">"{favoriteFoods.find(f => f.id === confirmDeleteFavId)?.name}"</span>? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-2.5 pt-1.5">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteFavId(null)}
+                className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirmDeleteFavId) {
+                    handleDeleteFavorite(confirmDeleteFavId);
+                    setConfirmDeleteFavId(null);
+                  }
+                }}
+                className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-rose-550/15 cursor-pointer animate-none"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP: Confirm Delete Logged Meal Modal */}
+      {confirmDeleteMealId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans">
+            <div className="space-y-2">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-50">Delete Logged Meal?</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Are you sure you want to delete <span className="font-semibold text-slate-850 dark:text-slate-200">"{record.meals.find(m => m.id === confirmDeleteMealId)?.name}"</span> from today's log? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-2.5 pt-1.5">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteMealId(null)}
+                className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirmDeleteMealId) {
+                    handleDeleteMeal(confirmDeleteMealId);
+                    setConfirmDeleteMealId(null);
+                  }
+                }}
+                className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-rose-550/15 cursor-pointer animate-none"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP 3: Edit Logged Meal Today Modal */}
+      {editingMealId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-350">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans">
+            <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800/80 pb-2.5">
+              <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-violet-600 dark:text-violet-400 flex items-center gap-1.5">
+                <Edit3 className="w-4.5 h-4.5 text-violet-500" />
+                Edit Logged Meal
+              </span>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 font-bold">Meal Name Description</span>
+                <input
+                  type="text"
+                  value={editMealName}
+                  onChange={(e) => setEditMealName(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-violet-400 text-slate-800 dark:text-slate-100 font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 bg-violet-500/5 dark:bg-violet-500/10 border border-violet-500/15 p-2.5 rounded-2xl">
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-violet-600 dark:text-violet-400 block mb-0.5 font-bold">Weight Eaten (g)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={editMealWeightGrams}
+                    onChange={(e) => handleEditWeightGramsChange(e.target.value)}
+                    className="w-full px-2.5 py-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 font-bold">Energy (kcal)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={editMealCalories}
+                    onChange={(e) => setEditMealCalories(e.target.value)}
+                    className="w-full px-2.5 py-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 font-bold truncate">Protein (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="-"
+                    step="0.1"
+                    value={editMealProtein}
+                    onChange={(e) => setEditMealProtein(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 font-bold truncate">Carbs (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="-"
+                    step="0.1"
+                    value={editMealCarbs}
+                    onChange={(e) => setEditMealCarbs(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+                <div>
+                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 font-bold truncate">Fat (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="-"
+                    step="0.1"
+                    value={editMealFat}
+                    onChange={(e) => setEditMealFat(e.target.value)}
+                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                  />
+                </div>
+              </div>
+
+              {/* Advanced micro row */}
+              <div className="grid grid-cols-4 gap-2 text-[10px] pt-1.5 border-t border-slate-100 dark:border-slate-800/40">
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 truncate">Sugar (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="-"
+                    step="0.1"
+                    value={editMealSugar}
+                    onChange={(e) => setEditMealSugar(e.target.value)}
+                    className="w-full p-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 truncate">Fiber (g)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="-"
+                    step="0.1"
+                    value={editMealFiber}
+                    onChange={(e) => setEditMealFiber(e.target.value)}
+                    className="w-full p-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 truncate font-mono">Na (mg)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="-"
+                    value={editMealSodium}
+                    onChange={(e) => setEditMealSodium(e.target.value)}
+                    className="w-full p-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 truncate font-mono">K (mg)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="-"
+                    value={editMealPotassium}
+                    onChange={(e) => setEditMealPotassium(e.target.value)}
+                    className="w-full p-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 pt-2.5">
+              <button
+                type="button"
+                onClick={() => setEditingMealId(null)}
+                className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveMealEdit(editingMealId)}
+                className="flex-[2] py-2 bg-violet-650 hover:bg-violet-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-violet-500/15 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Save Changes</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP: Add Consumed Meal Today Modal */}
+      {showAddMealModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-300 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans max-h-[95vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800/80 pb-2.5">
+              <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-rose-500 flex items-center gap-1.5">
+                <Flame className="w-4.5 h-4.5 text-rose-500 animate-pulse" />
+                Add Meal/Snack Today
+              </span>
+              {/* Note: The 'x' button at the top right is not present, as requested. */}
+            </div>
+
+            <form 
+              onSubmit={(e) => {
+                handleAddMeal(e);
+                if (mealName.trim()) {
+                  setShowAddMealModal(false);
+                }
+              }} 
+              className="space-y-4 text-xs"
+            >
+              <div className="relative" ref={suggestionRef}>
+                <label className="text-[10px] text-slate-400 dark:text-slate-440 uppercase block mb-1 font-mono font-bold">Meal/Snack Description</label>
+                <input
+                  id="meal-name"
+                  type="text"
+                  placeholder="Avocado Salmon Sourdough"
+                  value={mealName}
+                  onFocus={() => setShowSuggestions(true)}
+                  onChange={(e) => {
+                    setMealName(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  className="w-full px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-rose-300 focus:border-rose-500 text-slate-850 dark:text-slate-100 font-sans font-bold"
+                  autoComplete="off"
+                />
+
+                {showSuggestions && matchingSuggestions.length > 0 && (
+                  <div 
+                    id="meal-autofill-suggestions"
+                    className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-1.5 space-y-0.5 animate-in fade-in slide-in-from-top-2 duration-150"
+                  >
+                    <div className="flex items-center justify-between px-2.5 py-1 text-[9px] uppercase font-mono font-bold text-slate-450 border-b border-slate-100 dark:border-slate-800/50 pb-1.5 mb-1.5">
+                      <span>Autofill Favorites</span>
+                      <span className="bg-rose-500/10 text-rose-500 dark:text-rose-455 px-1.5 py-0.5 rounded-full text-[8px] font-mono leading-none">
+                        {matchingSuggestions.length} found
+                      </span>
+                    </div>
+
+                    {matchingSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic(12);
+                          setMealName(suggestion.name);
+                          setMealCalories(String(suggestion.calories));
+                          setProtein(suggestion.protein !== undefined ? String(suggestion.protein) : '');
+                          setCarbs(suggestion.carbs !== undefined ? String(suggestion.carbs) : '');
+                          setFat(suggestion.fat !== undefined ? String(suggestion.fat) : '');
+                          setSodium(suggestion.sodium !== undefined ? String(suggestion.sodium) : '');
+                          setPotassium(suggestion.potassium !== undefined ? String(suggestion.potassium) : '');
+                          setFiber(suggestion.fiber !== undefined ? String(suggestion.fiber) : '');
+                          setSugar(suggestion.sugar !== undefined ? String(suggestion.sugar) : '');
+                          setMealRefGrams(String(suggestion.referenceGrams || 100));
+                          setMealConsumedGrams(String(suggestion.referenceGrams || 100));
+                          setShowSuggestions(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl transition block group space-y-1 cursor-pointer"
+                      >
+                        <span className="text-[11.5px] font-semibold text-slate-850 dark:text-slate-100 block group-hover:text-rose-500 transition-colors truncate">
+                          {suggestion.name}
+                        </span>
+                        <div className="flex items-center justify-between gap-2 text-[9px] font-mono text-slate-400 dark:text-slate-500">
+                          <span className="font-semibold text-slate-600 dark:text-slate-400">{suggestion.calories} kcal</span>
+                          <span>P:{suggestion.protein || 0}g carb:{suggestion.carbs || 0}g</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-400 dark:text-slate-440 uppercase block mb-1 font-mono font-bold">Energy (kcal)</label>
+                <input
+                  id="meal-calories"
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="420"
+                  value={mealCalories}
+                  onChange={(e) => setMealCalories(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-rose-300 focus:border-rose-500 text-slate-850 dark:text-slate-100 font-sans font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/15 p-3 rounded-2xl">
+                <div>
+                  <label className="text-[9px] text-rose-600 dark:text-rose-455 uppercase block mb-1 font-mono font-bold truncate">Base Weight (g)</label>
+                  <input
+                    id="meal-ref-grams"
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="100"
+                    value={mealRefGrams}
+                    onChange={(e) => setMealRefGrams(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] text-rose-600 dark:text-rose-455 uppercase block mb-1 font-mono font-bold truncate">Consumed (g)</label>
+                  <input
+                    id="meal-consumed-grams"
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="100"
+                    value={mealConsumedGrams}
+                    onChange={(e) => setMealConsumedGrams(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                  />
+                </div>
+              </div>
+
+              {(
+                <div className="space-y-3 p-3 bg-slate-50 dark:bg-slate-950/80 border border-slate-150 dark:border-slate-800 rounded-2xl">
+                  {/* Macros Group */}
+                  <div className="space-y-1">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[8px] text-slate-400 dark:text-slate-440 uppercase block mb-0.5 font-mono font-bold leading-none">Protein (g)</label>
+                        <input
+                           type="number"
+                           inputMode="decimal"
+                           step="0.1"
+                           placeholder="0"
+                           value={protein}
+                           onChange={(e) => setProtein(e.target.value)}
+                           className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[8px] text-slate-400 dark:text-slate-440 uppercase block mb-0.5 font-mono font-bold leading-none">Carbs (g)</label>
+                        <input
+                           type="number"
+                           inputMode="decimal"
+                           step="0.1"
+                           placeholder="0"
+                           value={carbs}
+                           onChange={(e) => setCarbs(e.target.value)}
+                           className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[8px] text-slate-400 dark:text-slate-440 uppercase block mb-0.5 font-mono font-bold leading-none">Fat (g)</label>
+                        <input
+                           type="number"
+                           inputMode="decimal"
+                           step="0.1"
+                           placeholder="0"
+                           value={fat}
+                           onChange={(e) => setFat(e.target.value)}
+                           className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Micros Group */}
+                  <div className="space-y-1 pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
+                    <div className="grid grid-cols-4 gap-2">
+                      <div>
+                        <span className="text-[8px] uppercase font-mono text-slate-440 dark:text-slate-550 block mb-0.5 truncate font-bold">Sugar (g)</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.1"
+                          placeholder="0"
+                          value={sugar}
+                          onChange={(e) => setSugar(e.target.value)}
+                          className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[8px] uppercase font-mono text-slate-440 dark:text-slate-550 block mb-0.5 truncate font-bold">Fiber (g)</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.1"
+                          placeholder="0"
+                          value={fiber}
+                          onChange={(e) => setFiber(e.target.value)}
+                          className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[8px] uppercase font-mono text-slate-440 dark:text-slate-550 block mb-0.5 truncate font-mono font-bold">Na (mg)</span>
+                        <input
+                          type="number"
+                          placeholder="0"
+                          value={sodium}
+                          onChange={(e) => setSodium(e.target.value)}
+                          className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[8px] uppercase font-mono text-slate-440 dark:text-slate-550 block mb-0.5 truncate font-mono font-bold">K (mg)</span>
+                        <input
+                          type="number"
+                          placeholder="0"
+                          value={potassium}
+                          onChange={(e) => setPotassium(e.target.value)}
+                          className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddMealModal(false)}
+                  className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-705 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-[2] py-2 bg-rose-500 hover:bg-rose-600 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-rose-555/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Log Consumed Meal</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
