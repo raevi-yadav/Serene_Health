@@ -33,6 +33,8 @@ interface DietWidgetProps {
   onWaterChange: (updates: Partial<WaterRecord>) => void;
   isDarkMode?: boolean;
   settings: UserSettings;
+  user?: { email: string; name: string; photoURL: string } | null;
+  onRequestLogin?: () => void;
 }
 
 interface FavoriteFood {
@@ -43,18 +45,18 @@ interface FavoriteFood {
   carbs: number;
   fat: number;
   sodium: number; // mg
-  potassium: number; // mg
+  cholesterol: number; // mg
   fiber: number; // g
   sugar: number; // g
   referenceGrams?: number; // base weight in grams
 }
 
 const DEFAULT_FAVORITE_FOODS: FavoriteFood[] = [
-  { id: 'fav-1', name: 'Greek Yogurt & Granola', calories: 280, protein: 18, carbs: 32, fat: 6, sodium: 80, potassium: 240, fiber: 3, sugar: 12, referenceGrams: 100 },
-  { id: 'fav-2', name: 'Avocado Toast with Egg', calories: 340, protein: 12, carbs: 24, fat: 18, sodium: 290, potassium: 380, fiber: 6, sugar: 1, referenceGrams: 100 },
-  { id: 'fav-3', name: 'Grilled Chicken & Rice', calories: 520, protein: 44, carbs: 48, fat: 8, sodium: 450, potassium: 620, fiber: 4, sugar: 0, referenceGrams: 100 },
-  { id: 'fav-4', name: 'Baked Salmon & Broccoli', calories: 450, protein: 38, carbs: 12, fat: 22, sodium: 310, potassium: 680, fiber: 5, sugar: 1, referenceGrams: 100 },
-  { id: 'fav-5', name: 'Protein Shake (Whey + Banana)', calories: 310, protein: 28, carbs: 36, fat: 3, sodium: 150, potassium: 510, fiber: 3, sugar: 14, referenceGrams: 100 },
+  { id: 'fav-1', name: 'Greek Yogurt & Granola', calories: 280, protein: 18, carbs: 32, fat: 6, sodium: 80, cholesterol: 15, fiber: 3, sugar: 12, referenceGrams: 100 },
+  { id: 'fav-2', name: 'Avocado Toast with Egg', calories: 340, protein: 12, carbs: 24, fat: 18, sodium: 290, cholesterol: 185, fiber: 6, sugar: 1, referenceGrams: 100 },
+  { id: 'fav-3', name: 'Grilled Chicken & Rice', calories: 520, protein: 44, carbs: 48, fat: 8, sodium: 450, cholesterol: 85, fiber: 4, sugar: 0, referenceGrams: 100 },
+  { id: 'fav-4', name: 'Baked Salmon & Broccoli', calories: 450, protein: 38, carbs: 12, fat: 22, sodium: 310, cholesterol: 65, fiber: 5, sugar: 1, referenceGrams: 100 },
+  { id: 'fav-5', name: 'Protein Shake (Whey + Banana)', calories: 310, protein: 28, carbs: 36, fat: 3, sodium: 150, cholesterol: 45, fiber: 3, sugar: 14, referenceGrams: 100 },
 ];
 
 export default function DietWidget({
@@ -66,6 +68,8 @@ export default function DietWidget({
   onWaterChange,
   isDarkMode = false,
   settings,
+  user = null,
+  onRequestLogin,
 }: DietWidgetProps) {
   // Meal Form States
   const [mealName, setMealName] = useState('');
@@ -74,7 +78,7 @@ export default function DietWidget({
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
   const [sodium, setSodium] = useState('');
-  const [potassium, setPotassium] = useState('');
+  const [cholesterol, setCholesterol] = useState('');
   const [fiber, setFiber] = useState('');
   const [sugar, setSugar] = useState('');
   const [mealRefGrams, setMealRefGrams] = useState('100');
@@ -92,7 +96,7 @@ export default function DietWidget({
   const [editMealCarbs, setEditMealCarbs] = useState('');
   const [editMealFat, setEditMealFat] = useState('');
   const [editMealSodium, setEditMealSodium] = useState('');
-  const [editMealPotassium, setEditMealPotassium] = useState('');
+  const [editMealCholesterol, setEditMealCholesterol] = useState('');
   const [editMealFiber, setEditMealFiber] = useState('');
   const [editMealSugar, setEditMealSugar] = useState('');
   const [editMealWeightGrams, setEditMealWeightGrams] = useState('');
@@ -118,7 +122,7 @@ export default function DietWidget({
   const [favCarbs, setFavCarbs] = useState('');
   const [favFat, setFavFat] = useState('');
   const [favSodium, setFavSodium] = useState('');
-  const [favPotassium, setFavPotassium] = useState('');
+  const [favCholesterol, setFavCholesterol] = useState('');
   const [favFiber, setFavFiber] = useState('');
   const [favSugar, setFavSugar] = useState('');
   const [favRefGrams, setFavRefGrams] = useState('100');
@@ -152,7 +156,7 @@ export default function DietWidget({
     carbsGrams: number;
     fatGrams: number;
     sodiumMg: number;
-    potassiumMg: number;
+    cholesterolMg: number;
     fiberGrams: number;
     sugarGrams: number;
   } | null>(null);
@@ -165,7 +169,7 @@ export default function DietWidget({
   const [ocrConfirmCarbs, setOcrConfirmCarbs] = useState('');
   const [ocrConfirmFat, setOcrConfirmFat] = useState('');
   const [ocrConfirmSodium, setOcrConfirmSodium] = useState('');
-  const [ocrConfirmPotassium, setOcrConfirmPotassium] = useState('');
+  const [ocrConfirmCholesterol, setOcrConfirmCholesterol] = useState('');
   const [ocrConfirmFiber, setOcrConfirmFiber] = useState('');
   const [ocrConfirmSugar, setOcrConfirmSugar] = useState('');
 
@@ -194,7 +198,7 @@ export default function DietWidget({
   const totalCarbs = record.meals.reduce((sum, m) => sum + (m.carbs || 0), 0);
   const totalFat = record.meals.reduce((sum, m) => sum + (m.fat || 0), 0);
   const totalSodium = record.meals.reduce((sum, m) => sum + (m.sodium || 0), 0);
-  const totalPotassium = record.meals.reduce((sum, m) => sum + (m.potassium || 0), 0);
+  const totalCholesterol = record.meals.reduce((sum, m) => sum + (m.cholesterol || 0), 0);
   const totalFiber = record.meals.reduce((sum, m) => sum + (m.fiber || 0), 0);
   const totalSugar = record.meals.reduce((sum, m) => sum + (m.sugar || 0), 0);
 
@@ -215,8 +219,8 @@ export default function DietWidget({
   // Sodium Limit: 2300 mg (Standard Upper Limit recommended by AHA/RDA guidelines)
   const LIMIT_SODIUM = 2300;
   
-  // Potassium RDA: 3500 mg (Standard adequate intake/RDA guideline for adults)
-  const TARGET_POTASSIUM = 3500;
+  // Cholesterol Limit: 300 mg (Standard adequate intake/RDA limit for adults)
+  const LIMIT_CHOLESTEROL = 300;
 
   // Filter favorite foods for modern dropdown suggestions in Log Food form
   const matchingSuggestions = mealName.trim()
@@ -269,7 +273,7 @@ export default function DietWidget({
     const carbsGrams = extractValue(/(?:total carbohydrate|carbohydrate|carbo|carbs|total carb)\D*([\d.]+)\s*g/i, 0);
     const fatGrams = extractValue(/(?:total fat|fat|fats|lipid|lipides)\D*([\d.]+)\s*g/i, 0);
     const sodiumMg = extractValue(/(?:sodium|sodio|natrium)\D*([\d.]+)\s*mg/i, 0);
-    const potassiumMg = extractValue(/(?:potassium|potasio|kalium)\D*([\d.]+)\s*mg/i, 0);
+    const cholesterolMg = extractValue(/(?:cholesterol|colesterol)\D*([\d.]+)\s*mg/i, 0);
     const fiberGrams = extractValue(/(?:dietary fiber|fiber|fibers|fibres)\D*([\d.]+)\s*g/i, 0);
     const sugarGrams = extractValue(/(?:sugars|sugar|total sugars|sucres)\D*([\d.]+)\s*g/i, 0);
 
@@ -281,7 +285,7 @@ export default function DietWidget({
       carbsGrams,
       fatGrams,
       sodiumMg,
-      potassiumMg,
+      cholesterolMg,
       fiberGrams,
       sugarGrams,
     };
@@ -289,6 +293,13 @@ export default function DietWidget({
 
   const handleGeminiEnhance = async () => {
     if (!lastUploadedFile) return;
+
+    if (!user) {
+      triggerHaptic(25);
+      setOcrError("Google login required. Please sign in with your Google account in the top-right profile slot to use Gemini AI scanning.");
+      if (onRequestLogin) onRequestLogin();
+      return;
+    }
 
     triggerHaptic(20);
     setOcrScanning(true);
@@ -320,7 +331,7 @@ export default function DietWidget({
         carbsGrams: data.carbsGrams || 0,
         fatGrams: data.fatGrams || 0,
         sodiumMg: data.sodiumMg || 0,
-        potassiumMg: data.potassiumMg || 0,
+        cholesterolMg: data.cholesterolMg || 0,
         fiberGrams: data.fiberGrams || 0,
         sugarGrams: data.sugarGrams || 0,
       });
@@ -332,7 +343,7 @@ export default function DietWidget({
       setOcrConfirmCarbs(data.carbsGrams !== undefined ? String(data.carbsGrams) : '0');
       setOcrConfirmFat(data.fatGrams !== undefined ? String(data.fatGrams) : '0');
       setOcrConfirmSodium(data.sodiumMg !== undefined ? String(data.sodiumMg) : '0');
-      setOcrConfirmPotassium(data.potassiumMg !== undefined ? String(data.potassiumMg) : '0');
+      setOcrConfirmCholesterol(data.cholesterolMg !== undefined ? String(data.cholesterolMg) : '0');
       setOcrConfirmFiber(data.fiberGrams !== undefined ? String(data.fiberGrams) : '0');
       setOcrConfirmSugar(data.sugarGrams !== undefined ? String(data.sugarGrams) : '0');
       triggerHaptic(40);
@@ -396,7 +407,7 @@ export default function DietWidget({
       setOcrConfirmCarbs(String(parsed.carbsGrams));
       setOcrConfirmFat(String(parsed.fatGrams));
       setOcrConfirmSodium(String(parsed.sodiumMg));
-      setOcrConfirmPotassium(String(parsed.potassiumMg));
+      setOcrConfirmCholesterol(String(parsed.cholesterolMg));
       setOcrConfirmFiber(String(parsed.fiberGrams));
       setOcrConfirmSugar(String(parsed.sugarGrams));
 
@@ -405,6 +416,15 @@ export default function DietWidget({
       setOcrProgress(null);
     } catch (err: any) {
       console.warn("Local Tesseract OCR reading failed. Falling back to high-fidelity Gemini OCR cloud API.", err);
+      
+      if (!user) {
+        triggerHaptic(25);
+        setOcrError("Google login required to run Gemini high-fidelity fallback scan. Please sign in with your Google account.");
+        if (onRequestLogin) onRequestLogin();
+        setOcrScanning(false);
+        return;
+      }
+
       setOcrMode('gemini');
       setOcrProgress(null);
 
@@ -437,7 +457,7 @@ export default function DietWidget({
             carbsGrams: data.carbsGrams || 0,
             fatGrams: data.fatGrams || 0,
             sodiumMg: data.sodiumMg || 0,
-            potassiumMg: data.potassiumMg || 0,
+            cholesterolMg: data.cholesterolMg || 0,
             fiberGrams: data.fiberGrams || 0,
             sugarGrams: data.sugarGrams || 0,
           });
@@ -449,7 +469,7 @@ export default function DietWidget({
           setOcrConfirmCarbs(data.carbsGrams !== undefined ? String(data.carbsGrams) : '0');
           setOcrConfirmFat(data.fatGrams !== undefined ? String(data.fatGrams) : '0');
           setOcrConfirmSodium(data.sodiumMg !== undefined ? String(data.sodiumMg) : '0');
-          setOcrConfirmPotassium(data.potassiumMg !== undefined ? String(data.potassiumMg) : '0');
+          setOcrConfirmCholesterol(data.cholesterolMg !== undefined ? String(data.cholesterolMg) : '0');
           setOcrConfirmFiber(data.fiberGrams !== undefined ? String(data.fiberGrams) : '0');
           setOcrConfirmSugar(data.sugarGrams !== undefined ? String(data.sugarGrams) : '0');
           triggerHaptic(40);
@@ -477,7 +497,7 @@ export default function DietWidget({
     setOcrConfirmCarbs(ocrResult.carbsGrams !== undefined ? String(parseFloat((ocrResult.carbsGrams * factor).toFixed(1))) : '0');
     setOcrConfirmFat(ocrResult.fatGrams !== undefined ? String(parseFloat((ocrResult.fatGrams * factor).toFixed(1))) : '0');
     setOcrConfirmSodium(ocrResult.sodiumMg !== undefined ? String(parseFloat((ocrResult.sodiumMg * factor).toFixed(1))) : '0');
-    setOcrConfirmPotassium(ocrResult.potassiumMg !== undefined ? String(parseFloat((ocrResult.potassiumMg * factor).toFixed(1))) : '0');
+    setOcrConfirmCholesterol(ocrResult.cholesterolMg !== undefined ? String(parseFloat((ocrResult.cholesterolMg * factor).toFixed(1))) : '0');
     setOcrConfirmFiber(ocrResult.fiberGrams !== undefined ? String(parseFloat((ocrResult.fiberGrams * factor).toFixed(1))) : '0');
     setOcrConfirmSugar(ocrResult.sugarGrams !== undefined ? String(parseFloat((ocrResult.sugarGrams * factor).toFixed(1))) : '0');
   };
@@ -497,7 +517,7 @@ export default function DietWidget({
     const finalCarbs = ocrConfirmCarbs ? parseFloat(ocrConfirmCarbs) : undefined;
     const finalFat = ocrConfirmFat ? parseFloat(ocrConfirmFat) : undefined;
     const finalSodium = ocrConfirmSodium ? parseFloat(ocrConfirmSodium) : undefined;
-    const finalPotassium = ocrConfirmPotassium ? parseFloat(ocrConfirmPotassium) : undefined;
+    const finalCholesterol = ocrConfirmCholesterol ? parseFloat(ocrConfirmCholesterol) : undefined;
     const finalFiber = ocrConfirmFiber ? parseFloat(ocrConfirmFiber) : undefined;
     const finalSugar = ocrConfirmSugar ? parseFloat(ocrConfirmSugar) : undefined;
 
@@ -509,7 +529,7 @@ export default function DietWidget({
       carbs: finalCarbs,
       fat: finalFat,
       sodium: finalSodium,
-      potassium: finalPotassium,
+      cholesterol: finalCholesterol,
       fiber: finalFiber,
       sugar: finalSugar,
       weightGrams: consumed,
@@ -537,7 +557,7 @@ export default function DietWidget({
         carbs: finalCarbs !== undefined ? parseFloat((finalCarbs * scaleBack).toFixed(1)) : 0,
         fat: finalFat !== undefined ? parseFloat((finalFat * scaleBack).toFixed(1)) : 0,
         sodium: finalSodium !== undefined ? parseFloat((finalSodium * scaleBack).toFixed(1)) : 0,
-        potassium: finalPotassium !== undefined ? parseFloat((finalPotassium * scaleBack).toFixed(1)) : 0,
+        cholesterol: finalCholesterol !== undefined ? parseFloat((finalCholesterol * scaleBack).toFixed(1)) : 0,
         fiber: finalFiber !== undefined ? parseFloat((finalFiber * scaleBack).toFixed(1)) : 0,
         sugar: finalSugar !== undefined ? parseFloat((finalSugar * scaleBack).toFixed(1)) : 0,
       };
@@ -564,7 +584,7 @@ export default function DietWidget({
     const finalCarbs = carbs ? parseFloat((parseFloat(carbs) * factor).toFixed(1)) : undefined;
     const finalFat = fat ? parseFloat((parseFloat(fat) * factor).toFixed(1)) : undefined;
     const finalSodium = sodium ? parseFloat((parseFloat(sodium) * factor).toFixed(1)) : undefined;
-    const finalPotassium = potassium ? parseFloat((parseFloat(potassium) * factor).toFixed(1)) : undefined;
+    const finalCholesterol = cholesterol ? parseFloat((parseFloat(cholesterol) * factor).toFixed(1)) : undefined;
     const finalFiber = fiber ? parseFloat((parseFloat(fiber) * factor).toFixed(1)) : undefined;
     const finalSugar = sugar ? parseFloat((parseFloat(sugar) * factor).toFixed(1)) : undefined;
 
@@ -576,7 +596,7 @@ export default function DietWidget({
       carbs: finalCarbs,
       fat: finalFat,
       sodium: finalSodium,
-      potassium: finalPotassium,
+      cholesterol: finalCholesterol,
       fiber: finalFiber,
       sugar: finalSugar,
       weightGrams: consumed,
@@ -597,7 +617,7 @@ export default function DietWidget({
     setCarbs('');
     setFat('');
     setSodium('');
-    setPotassium('');
+    setCholesterol('');
     setFiber('');
     setSugar('');
     setMealRefGrams('100');
@@ -618,7 +638,7 @@ export default function DietWidget({
       carbs: fav.carbs ? parseFloat((fav.carbs * f).toFixed(1)) : undefined,
       fat: fav.fat ? parseFloat((fav.fat * f).toFixed(1)) : undefined,
       sodium: fav.sodium ? parseFloat((fav.sodium * f).toFixed(1)) : undefined,
-      potassium: fav.potassium ? parseFloat((fav.potassium * f).toFixed(1)) : undefined,
+      cholesterol: fav.cholesterol ? parseFloat((fav.cholesterol * f).toFixed(1)) : undefined,
       fiber: fav.fiber ? parseFloat((fav.fiber * f).toFixed(1)) : undefined,
       sugar: fav.sugar ? parseFloat((fav.sugar * f).toFixed(1)) : undefined,
       weightGrams: amt,
@@ -657,7 +677,7 @@ export default function DietWidget({
     setEditMealCarbs(baselineMeal.carbs !== undefined ? String(parseFloat((baselineMeal.carbs * factor).toFixed(1))) : '');
     setEditMealFat(baselineMeal.fat !== undefined ? String(parseFloat((baselineMeal.fat * factor).toFixed(1))) : '');
     setEditMealSodium(baselineMeal.sodium !== undefined ? String(parseFloat((baselineMeal.sodium * factor).toFixed(1))) : '');
-    setEditMealPotassium(baselineMeal.potassium !== undefined ? String(parseFloat((baselineMeal.potassium * factor).toFixed(1))) : '');
+    setEditMealCholesterol(baselineMeal.cholesterol !== undefined ? String(parseFloat((baselineMeal.cholesterol * factor).toFixed(1))) : '');
     setEditMealFiber(baselineMeal.fiber !== undefined ? String(parseFloat((baselineMeal.fiber * factor).toFixed(1))) : '');
     setEditMealSugar(baselineMeal.sugar !== undefined ? String(parseFloat((baselineMeal.sugar * factor).toFixed(1))) : '');
 
@@ -682,7 +702,7 @@ export default function DietWidget({
     setEditMealCarbs(item.carbs !== undefined ? String(item.carbs) : '');
     setEditMealFat(item.fat !== undefined ? String(item.fat) : '');
     setEditMealSodium(item.sodium !== undefined ? String(item.sodium) : '');
-    setEditMealPotassium(item.potassium !== undefined ? String(item.potassium) : '');
+    setEditMealCholesterol(item.cholesterol !== undefined ? String(item.cholesterol) : '');
     setEditMealFiber(item.fiber !== undefined ? String(item.fiber) : '');
     setEditMealSugar(item.sugar !== undefined ? String(item.sugar) : '');
     setEditMealWeightGrams(item.weightGrams !== undefined ? String(Math.round(item.weightGrams)) : '100');
@@ -699,7 +719,7 @@ export default function DietWidget({
           carbs: editMealCarbs ? parseFloat(editMealCarbs) : undefined,
           fat: editMealFat ? parseFloat(editMealFat) : undefined,
           sodium: editMealSodium ? parseFloat(editMealSodium) : undefined,
-          potassium: editMealPotassium ? parseFloat(editMealPotassium) : undefined,
+          cholesterol: editMealCholesterol ? parseFloat(editMealCholesterol) : undefined,
           fiber: editMealFiber ? parseFloat(editMealFiber) : undefined,
           sugar: editMealSugar ? parseFloat(editMealSugar) : undefined,
           weightGrams: editMealWeightGrams ? parseFloat(editMealWeightGrams) : undefined,
@@ -731,7 +751,7 @@ export default function DietWidget({
         carbs: editMealCarbs ? parseFloat((parseFloat(editMealCarbs) * scaleBack).toFixed(1)) : 0,
         fat: editMealFat ? parseFloat((parseFloat(editMealFat) * scaleBack).toFixed(1)) : 0,
         sodium: editMealSodium ? parseFloat((parseFloat(editMealSodium) * scaleBack).toFixed(1)) : 0,
-        potassium: editMealPotassium ? parseFloat((parseFloat(editMealPotassium) * scaleBack).toFixed(1)) : 0,
+        cholesterol: editMealCholesterol ? parseFloat((parseFloat(editMealCholesterol) * scaleBack).toFixed(1)) : 0,
         fiber: editMealFiber ? parseFloat((parseFloat(editMealFiber) * scaleBack).toFixed(1)) : 0,
         sugar: editMealSugar ? parseFloat((parseFloat(editMealSugar) * scaleBack).toFixed(1)) : 0,
       };
@@ -762,7 +782,7 @@ export default function DietWidget({
       carbs: parseFloat(favCarbs) || 0,
       fat: parseFloat(favFat) || 0,
       sodium: parseFloat(favSodium) || 0,
-      potassium: parseFloat(favPotassium) || 0,
+      cholesterol: parseFloat(favCholesterol) || 0,
       fiber: parseFloat(favFiber) || 0,
       sugar: parseFloat(favSugar) || 0,
       referenceGrams: parseInt(favRefGrams) || 100,
@@ -775,7 +795,7 @@ export default function DietWidget({
     setFavCarbs('');
     setFavFat('');
     setFavSodium('');
-    setFavPotassium('');
+    setFavCholesterol('');
     setFavFiber('');
     setFavSugar('');
     setFavRefGrams('100');
@@ -799,7 +819,7 @@ export default function DietWidget({
     setFavCarbs(String(fav.carbs));
     setFavFat(String(fav.fat));
     setFavSodium(String(fav.sodium));
-    setFavPotassium(String(fav.potassium));
+    setFavCholesterol(String(fav.cholesterol));
     setFavFiber(String(fav.fiber));
     setFavSugar(fav.sugar !== undefined ? String(fav.sugar) : '0');
     setFavRefGrams(String(fav.referenceGrams || 100));
@@ -817,7 +837,7 @@ export default function DietWidget({
             carbs: parseFloat(favCarbs) || 0,
             fat: parseFloat(favFat) || 0,
             sodium: parseFloat(favSodium) || 0,
-            potassium: parseFloat(favPotassium) || 0,
+            cholesterol: parseFloat(favCholesterol) || 0,
             fiber: parseFloat(favFiber) || 0,
             sugar: parseFloat(favSugar) || 0,
             referenceGrams: parseInt(favRefGrams) || 100,
@@ -833,7 +853,7 @@ export default function DietWidget({
     setFavCarbs('');
     setFavFat('');
     setFavSodium('');
-    setFavPotassium('');
+    setFavCholesterol('');
     setFavFiber('');
     setFavSugar('');
     setFavRefGrams('100');
@@ -862,7 +882,7 @@ export default function DietWidget({
       carbs: item.carbs || 0,
       fat: item.fat || 0,
       sodium: item.sodium || 0,
-      potassium: item.potassium || 0,
+      cholesterol: item.cholesterol || 0,
       fiber: item.fiber || 0,
       sugar: item.sugar || 0,
       referenceGrams: item.weightGrams || 100,
@@ -932,7 +952,7 @@ export default function DietWidget({
               { name: 'Fat', unit: 'g', total: totalFat, target: TARGET_FAT, barColorClass: 'bg-rose-500 dark:bg-rose-455' },
               { name: 'Fiber', unit: 'g', total: totalFiber, target: TARGET_FIBER, barColorClass: 'bg-emerald-500 dark:bg-emerald-400' },
               { name: 'Sodium', unit: 'mg', total: totalSodium, target: LIMIT_SODIUM, barColorClass: 'bg-slate-405 dark:bg-slate-500' },
-              { name: 'Potassium', unit: 'mg', total: totalPotassium, target: TARGET_POTASSIUM, barColorClass: 'bg-violet-500 dark:bg-violet-400' },
+              { name: 'Cholesterol', unit: 'mg', total: totalCholesterol, target: LIMIT_CHOLESTEROL, barColorClass: 'bg-violet-500 dark:bg-violet-400' },
               { name: 'Sugar', unit: 'g', total: totalSugar, target: LIMIT_SUGAR, barColorClass: 'bg-red-500' },
             ].map((n) => {
               const total = n.total;
@@ -1063,7 +1083,7 @@ export default function DietWidget({
               <Flame className="w-4.5 h-4.5 text-rose-500" />
               Logged Meals Today
             </h3>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Track custom food intakes, add nutrients, or scan label using Gemini.</p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Track custom food intakes, add nutrients, or scan label.</p>
           </div>
           
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1077,7 +1097,7 @@ export default function DietWidget({
                 setCarbs('');
                 setFat('');
                 setSodium('');
-                setPotassium('');
+                setCholesterol('');
                 setFiber('');
                 setSugar('');
                 setMealRefGrams('100');
@@ -1141,7 +1161,7 @@ export default function DietWidget({
                       className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-violet-500/15 hover:text-violet-600 rounded-xl transition flex items-center gap-2 cursor-pointer"
                     >
                       <Camera className="w-4 h-4 text-violet-500" />
-                      <span>Camera (Take Photo)</span>
+                      <span>Camera</span>
                     </button>
                     <button
                       type="button"
@@ -1151,7 +1171,7 @@ export default function DietWidget({
                       className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-violet-500/15 hover:text-violet-600 rounded-xl transition flex items-center gap-2 cursor-pointer"
                     >
                       <Image className="w-4 h-4 text-violet-500" />
-                      <span>Gallery (Upload Image)</span>
+                      <span>Gallery</span>
                     </button>
                   </div>
                 </>
@@ -1211,8 +1231,8 @@ export default function DietWidget({
                           {item.fat !== undefined && ` • ${item.fat}g F`}
                           {item.sugar !== undefined && ` • ${item.sugar}g Sugar`}
                           {item.sodium !== undefined && ` • ${item.sodium}mg Na`}
-                          {item.potassium !== undefined && ` • ${item.potassium}mg K`}
-                          {item.fiber !== undefined && ` • ${item.fiber}g F`}
+                          {item.cholesterol !== undefined && ` • ${item.cholesterol}mg Chol`}
+                          {item.fiber !== undefined && ` • ${item.fiber}g Fiber`}
                         </span>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -1289,151 +1309,73 @@ export default function DietWidget({
         {/* Favorite Food List / Grid matching design guidelines */}
         <div className="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto pr-1">
           {favoriteFoods.map((fav) => {
-            const isEditing = editingFavoriteId === fav.id;
-            const isLogging = favLoggingId === fav.id;
-
             return (
               <div
                 id={`favorite-food-${fav.id}`}
                 key={fav.id}
                 className="p-3 border border-slate-100 dark:border-slate-800 bg-slate-50/55 dark:bg-slate-900/40 rounded-2xl flex flex-col justify-between gap-2.5 transition group hover:border-slate-200 dark:hover:border-slate-700"
               >
-                {isLogging ? (
-                  /* Interactive Portion Logging Inline Form panel */
-                  <div className="space-y-3.5 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] uppercase font-mono font-bold text-rose-500">Log Portioned Weight</span>
-                      <button
-                        type="button"
-                        onClick={() => setFavLoggingId(null)}
-                        className="text-slate-400 hover:text-slate-600 text-xs font-bold"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                <div className="flex justify-between items-center gap-4">
+                  {/* Name and nutrient indicators on the left */}
+                  <div className="flex-1 min-w-0 pr-1">
+                    <h4 className="font-sans font-bold text-slate-700 dark:text-slate-200 text-xs truncate">
+                      {fav.name}
+                    </h4>
+                    <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 mt-1 inline-block bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 dark:text-indigo-400 border border-indigo-100/40 dark:border-indigo-900/30 rounded">
+                      {fav.referenceGrams || 100}g reference serving
+                    </span>
 
-                    <div className="border border-indigo-150 bg-indigo-50/20 dark:border-indigo-950/40 dark:bg-indigo-950/10 p-2.5 rounded-xl space-y-1">
-                      <span className="text-[10px] font-medium text-slate-800 dark:text-slate-200 block truncate">{fav.name}</span>
-                      <span className="text-[9px] text-slate-400 block font-mono">Reference serving size: {fav.referenceGrams || 100}g</span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Weight Consumed:</span>
-                      <input
-                        type="number"
-                        className="w-full px-2.5 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono focus:ring-1 focus:ring-rose-400 focus:border-rose-500"
-                        value={favLoggingGrams}
-                        onChange={(e) => setFavLoggingGrams(e.target.value)}
-                        placeholder={String(fav.referenceGrams || 100)}
-                      />
-                      <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">g</span>
-                    </div>
-
-                    {/* Highly tailored real-time scaled nutrient calculator display */}
-                    {(() => {
-                      const grams = parseFloat(favLoggingGrams) || 0;
-                      const ref = fav.referenceGrams || 100;
-                      const factor = grams / ref;
-                      const cals = Math.round(fav.calories * factor);
-                      const proteing = fav.protein ? (fav.protein * factor).toFixed(1) : '0';
-                      const carb_g = fav.carbs ? (fav.carbs * factor).toFixed(1) : '0';
-                      const fatg = fav.fat ? (fav.fat * factor).toFixed(1) : '0';
-                      return (
-                        <div className="text-[9px] font-mono text-slate-400 dark:text-slate-500 bg-slate-100/40 dark:bg-slate-800/25 px-2.5 py-1.5 rounded-lg flex justify-between">
-                          <span>Scaled: {cals} kcal</span>
-                          <span>P: {proteing}g</span>
-                          <span>C: {carb_g}g</span>
-                          <span>F: {fatg}g</span>
-                        </div>
-                      );
-                    })()}
-
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const amt = parseFloat(favLoggingGrams) || (fav.referenceGrams || 100);
-                          handleLogFavorite(fav, amt);
-                          setFavLoggingId(null);
-                        }}
-                        className="flex-1 py-1.5 bg-rose-500 hover:bg-rose-600 block text-xs font-semibold text-white rounded-xl transition shadow-md shadow-rose-500/10 text-center"
-                      >
-                        Confirm Portion Log
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFavLoggingId(null)}
-                        className="py-1.5 px-3 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-medium rounded-xl transition"
-                      >
-                        Back
-                      </button>
+                    <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 space-y-0.5 mt-2.5 border-l-2 border-indigo-100/50 dark:border-indigo-950/40 pl-2">
+                      <div>Energy: {fav.calories} kcal</div>
+                      {fav.protein !== undefined && <div>Protein: {fav.protein}g</div>}
+                      {fav.carbs !== undefined && <div>Carbs: {fav.carbs}g</div>}
+                      {fav.fat !== undefined && <div>Fat: {fav.fat}g</div>}
+                      {fav.sugar !== undefined && fav.sugar !== 0 && <div>Sugar: {fav.sugar}g</div>}
+                      {fav.fiber !== undefined && fav.fiber !== 0 && <div>Fiber: {fav.fiber}g</div>}
+                      {fav.sodium !== undefined && fav.sodium !== 0 && <div>Sodium: {fav.sodium}mg</div>}
+                      {fav.cholesterol !== undefined && fav.cholesterol !== 0 && <div>Cholesterol: {fav.cholesterol}mg</div>}
                     </div>
                   </div>
-                ) : (
-                  <>
-                    <div className="flex justify-between items-center gap-4">
-                      {/* Name and nutrient indicators on the left */}
-                      <div className="flex-1 min-w-0 pr-1">
-                        <h4 className="font-sans font-bold text-slate-700 dark:text-slate-200 text-xs truncate">
-                          {fav.name}
-                        </h4>
-                        <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 mt-1 inline-block bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 dark:text-indigo-400 border border-indigo-100/40 dark:border-indigo-900/30 rounded">
-                          {fav.referenceGrams || 100}g reference serving
-                        </span>
 
-                        <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 space-y-0.5 mt-2.5 border-l-2 border-indigo-100/50 dark:border-indigo-950/40 pl-2">
-                          <div>Energy: {fav.calories} kcal</div>
-                          {fav.protein !== undefined && <div>Protein: {fav.protein}g</div>}
-                          {fav.carbs !== undefined && <div>Carbs: {fav.carbs}g</div>}
-                          {fav.fat !== undefined && <div>Fat: {fav.fat}g</div>}
-                          {fav.sugar !== undefined && fav.sugar !== 0 && <div>Sugar: {fav.sugar}g</div>}
-                          {fav.fiber !== undefined && fav.fiber !== 0 && <div>Fiber: {fav.fiber}g</div>}
-                          {fav.sodium !== undefined && fav.sodium !== 0 && <div>Sodium: {fav.sodium}mg</div>}
-                          {fav.potassium !== undefined && fav.potassium !== 0 && <div>Potassium: {fav.potassium}mg</div>}
-                        </div>
-                      </div>
-
-                      {/* Stacking the Actions Vertically on the Right */}
-                      <div className="flex flex-col gap-6 items-center flex-shrink-0 bg-slate-100/50 dark:bg-slate-800/10 p-2 rounded-xl border border-slate-100 dark:border-slate-800/35">
-                        {/* Instant portions add trigger */}
-                        <button
-                          id={`add-favorite-instantly-${fav.id}`}
-                          type="button"
-                          onClick={() => {
-                            setFavLoggingId(fav.id);
-                            setFavLoggingGrams(String(fav.referenceGrams || 100));
-                          }}
-                          title="Log portion of favorite"
-                          className="p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg transition"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                        
-                        {/* Edit card details trigger */}
-                        <button
-                          id={`edit-favorite-${fav.id}`}
-                          type="button"
-                          onClick={() => startFavEditing(fav)}
-                          title="Edit base food card parameters"
-                          className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        
-                        {/* Delete trigger */}
-                        <button
-                          id={`delete-favorite-${fav.id}`}
-                          type="button"
-                          onClick={() => setConfirmDeleteFavId(fav.id)}
-                          title="Delete favorite card"
-                          className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
+                  {/* Stacking the Actions Vertically on the Right */}
+                  <div className="flex flex-col gap-6 items-center flex-shrink-0 bg-slate-100/50 dark:bg-slate-800/10 p-2 rounded-xl border border-slate-100 dark:border-slate-800/35">
+                    {/* Instant portions add trigger */}
+                    <button
+                      id={`add-favorite-instantly-${fav.id}`}
+                      type="button"
+                      onClick={() => {
+                        setFavLoggingId(fav.id);
+                        setFavLoggingGrams(String(fav.referenceGrams || 100));
+                      }}
+                      title="Log portion of favorite"
+                      className="p-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg transition"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                    
+                    {/* Edit card details trigger */}
+                    <button
+                      id={`edit-favorite-${fav.id}`}
+                      type="button"
+                      onClick={() => startFavEditing(fav)}
+                      title="Edit base food card parameters"
+                      className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                    
+                    {/* Delete trigger */}
+                    <button
+                      id={`delete-favorite-${fav.id}`}
+                      type="button"
+                      onClick={() => setConfirmDeleteFavId(fav.id)}
+                      title="Delete favorite card"
+                      className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -1628,11 +1570,11 @@ export default function DietWidget({
                   />
                 </div>
                 <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold truncate font-mono">Potassium (mg)</span>
+                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-1 font-bold truncate font-mono">Cholesterol (mg)</span>
                   <input
                     type="number"
-                    value={ocrConfirmPotassium}
-                    onChange={(e) => setOcrConfirmPotassium(e.target.value)}
+                    value={ocrConfirmCholesterol}
+                    onChange={(e) => setOcrConfirmCholesterol(e.target.value)}
                     className="w-full p-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono"
                   />
                 </div>
@@ -1700,180 +1642,242 @@ export default function DietWidget({
 
       {/* POPUP 1: Add Favorite Item Modal */}
       {showAddFavoriteForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-350">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-350">
           <form 
             onSubmit={handleCreateFavorite} 
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans"
+            className="bg-white dark:bg-slate-900 border-2 border-slate-900 dark:border-slate-700 rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans"
           >
+            {/* HEADER ROW */}
             <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800/80 pb-2.5">
-              <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-indigo-650 dark:text-indigo-400 flex items-center gap-1.5">
+              <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
                 <Heart className="w-4.5 h-4.5 text-rose-500 fill-rose-500 animate-pulse" />
                 Add Favorite Item
               </span>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                <div className="sm:col-span-2">
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold">Food Description</span>
+            <div className="space-y-4 text-xs">
+              {/* FOOD DESCRIPTION */}
+              <div className="relative">
+                <span className="text-[12px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block mb-1">
+                  FOOD DESCRIPTION
+                </span>
+                <div className="border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950 p-1">
                   <input
                     type="text"
                     required
-                    placeholder="Greek Yogurt Cup"
+                    placeholder="e.g. Greek Yogurt Cup"
                     value={favName}
                     onChange={(e) => setFavName(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-450 text-slate-800 dark:text-slate-100"
-                  />
-                </div>
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold">Serving (g)</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    required
-                    value={favRefGrams}
-                    onChange={(e) => setFavRefGrams(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-450 text-slate-800 dark:text-slate-100 font-mono"
+                    className="w-full px-2 py-1 text-xs bg-transparent focus:outline-none text-slate-900 dark:text-slate-100 font-bold"
+                    autoComplete="off"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-4 gap-2">
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">kcal</span>
+              {/* SERVING SIZE GROUP */}
+              <div className="space-y-1.5">
+                <span className="text-[12px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">
+                  Serving Size
+                </span>
+                <div className="bg-slate-50 dark:bg-[#0d111c]/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/80">
+                  <div>
+                    <span className="text-[10px] uppercase font-sans font-semibold text-slate-400 dark:text-slate-500 block mb-1">Base Weight</span>
+                    <div className="flex items-center gap-1.5 bg-white dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg focus-within:border-indigo-500 transition">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        required
+                        value={favRefGrams}
+                        onChange={(e) => setFavRefGrams(e.target.value)}
+                        className="w-full bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="text-xs text-slate-400 font-mono">g</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ENERGY ROW */}
+              <div className="flex items-center justify-between border-t border-b border-slate-200 dark:border-slate-800 py-3.5 my-1 text-slate-900 dark:text-slate-100">
+                <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Energy</span>
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg focus-within:border-indigo-500 transition">
                   <input
                     type="number"
                     inputMode="numeric"
-                    placeholder="0"
                     required
                     value={favCalories}
                     onChange={(e) => setFavCalories(e.target.value)}
-                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                    className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right font-bold text-xs focus:outline-none"
                   />
-                </div>
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Pro (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    placeholder="0"
-                    value={favProtein}
-                    onChange={(e) => setFavProtein(e.target.value)}
-                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
-                  />
-                </div>
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Carb (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    placeholder="0"
-                    value={favCarbs}
-                    onChange={(e) => setFavCarbs(e.target.value)}
-                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
-                  />
-                </div>
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Fat (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    placeholder="0"
-                    value={favFat}
-                    onChange={(e) => setFavFat(e.target.value)}
-                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
-                  />
+                  <span className="text-xs font-bold font-mono text-slate-400">kcal</span>
                 </div>
               </div>
 
-              {/* Advanced Micros row */}
-              <div className="grid grid-cols-4 gap-2 text-[10px] pt-1 border-t border-slate-100 dark:border-slate-800/40">
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-bold">Sugar (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    placeholder="0"
-                    value={favSugar}
-                    onChange={(e) => setFavSugar(e.target.value)}
-                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
-                  />
+              {/* NUTRIENT FIELDS FORM SHEET */}
+              <div className="space-y-3">
+                {/* PROTEIN */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Protein</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-indigo-500 transition">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      placeholder="0"
+                      value={favProtein}
+                      onChange={(e) => setFavProtein(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-bold">Fiber (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    placeholder="0"
-                    value={favFiber}
-                    onChange={(e) => setFavFiber(e.target.value)}
-                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
-                  />
+
+                {/* CARBS GROUP */}
+                <div className="space-y-2.5 border-b border-slate-100 dark:border-slate-800/60 pb-2.5">
+                  <div className="flex items-center justify-between text-slate-900 dark:text-slate-100">
+                    <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Carbohydrate</span>
+                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-indigo-500 transition">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        placeholder="0"
+                        value={favCarbs}
+                        onChange={(e) => setFavCarbs(e.target.value)}
+                        className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                    </div>
+                  </div>
+
+                  {/* NESTED CHILDREN (SUGAR & FIBER) */}
+                  <div className="pl-4 border-l border-slate-200 dark:border-slate-800/80 space-y-2.5 ml-1">
+                    {/* Sugar */}
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">└─</span> Sugar
+                      </span>
+                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md focus-within:border-indigo-500 transition">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.1"
+                          placeholder="0"
+                          value={favSugar}
+                          onChange={(e) => setFavSugar(e.target.value)}
+                          className="w-14 bg-transparent text-slate-800 dark:text-slate-200 font-mono text-right text-xs focus:outline-none"
+                        />
+                        <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                      </div>
+                    </div>
+
+                    {/* DIETARY FIBER */}
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">└─</span> Dietary Fiber
+                      </span>
+                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md focus-within:border-indigo-500 transition">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.1"
+                          placeholder="0"
+                          value={favFiber}
+                          onChange={(e) => setFavFiber(e.target.value)}
+                          className="w-14 bg-transparent text-slate-800 dark:text-slate-200 font-mono text-right text-xs focus:outline-none"
+                        />
+                        <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-mono font-bold">Na (mg)</span>
-                  <input
-                    type="number"
-                    placeholder="0"
-                    value={favSodium}
-                    onChange={(e) => setFavSodium(e.target.value)}
-                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
-                  />
+
+                {/* TOTAL FAT */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Total Fat</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-indigo-500 transition">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      placeholder="0"
+                      value={favFat}
+                      onChange={(e) => setFavFat(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-mono font-bold">K (mg)</span>
-                  <input
-                    type="number"
-                    placeholder="0"
-                    value={favPotassium}
-                    onChange={(e) => setFavPotassium(e.target.value)}
-                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
-                  />
+
+                {/* CHOLESTEROL */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Cholesterol</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-indigo-500 transition">
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={favCholesterol}
+                      onChange={(e) => setFavCholesterol(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">mg</span>
+                  </div>
+                </div>
+
+                {/* SODIUM */}
+                <div className="flex items-center justify-between pb-1 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Sodium</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-indigo-500 transition">
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={favSodium}
+                      onChange={(e) => setFavSodium(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">mg</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex gap-2.5 pt-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddFavoriteForm(false);
-                  setFavName('');
-                  setFavCalories('');
-                  setFavProtein('');
-                  setFavCarbs('');
-                  setFavFat('');
-                  setFavSodium('');
-                  setFavPotassium('');
-                  setFavFiber('');
-                  setFavSugar('');
-                  setFavRefGrams('100');
-                }}
-                className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-[2] py-2 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-indigo-550/15 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Check className="w-4 h-4" />
-                <span>Save Item</span>
-              </button>
+              {/* ACTIONS ROW */}
+              <div className="flex gap-2.5 pt-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddFavoriteForm(false);
+                    setFavName('');
+                    setFavCalories('');
+                    setFavProtein('');
+                    setFavCarbs('');
+                    setFavFat('');
+                    setFavSodium('');
+                    setFavCholesterol('');
+                    setFavFiber('');
+                    setFavSugar('');
+                    setFavRefGrams('100');
+                  }}
+                  className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-[2] py-2 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-indigo-500/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Save Item</span>
+                </button>
+              </div>
             </div>
           </form>
         </div>
       )}
-
       {/* POPUP 2: Edit Favorite Item Modal */}
       {editingFavoriteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-350">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-350">
+          <div className="bg-white dark:bg-slate-900 border-2 border-slate-900 dark:border-slate-700 rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans">
+            {/* HEADER ROW */}
             <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800/80 pb-2.5">
               <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
                 <Edit3 className="w-4.5 h-4.5 text-indigo-500 animate-pulse" />
@@ -1881,141 +1885,433 @@ export default function DietWidget({
               </span>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold">Food Description</span>
-                <input
-                  type="text"
-                  value={favName}
-                  onChange={(e) => setFavName(e.target.value)}
-                  className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-455 text-slate-800 dark:text-slate-100 font-bold"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5 bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/15 p-2.5 rounded-2xl">
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-mono">Ref Serving (g)</span>
+            <div className="space-y-4 text-xs">
+              {/* FOOD DESCRIPTION */}
+              <div className="relative">
+                <span className="text-[12px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block mb-1">
+                  FOOD DESCRIPTION
+                </span>
+                <div className="border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950 p-1">
                   <input
-                    type="number"
-                    inputMode="numeric"
-                    value={favRefGrams}
-                    onChange={(e) => setFavRefGrams(e.target.value)}
-                    className="w-full px-2 py-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                    type="text"
+                    required
+                    placeholder="e.g. Greek Yogurt Cup"
+                    value={favName}
+                    onChange={(e) => setFavName(e.target.value)}
+                    className="w-full px-2 py-1 text-xs bg-transparent focus:outline-none text-slate-900 dark:text-slate-100 font-bold"
+                    autoComplete="off"
                   />
                 </div>
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-mono font-bold">Energy (kcal)</span>
+              </div>
+
+              {/* SERVING SIZE GROUP */}
+              <div className="space-y-1.5">
+                <span className="text-[12px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">
+                  Serving Size
+                </span>
+                <div className="bg-slate-50 dark:bg-[#0d111c]/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/80">
+                  <div>
+                    <span className="text-[10px] uppercase font-sans font-semibold text-slate-400 dark:text-slate-500 block mb-1">Base Weight</span>
+                    <div className="flex items-center gap-1.5 bg-white dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg focus-within:border-indigo-500 transition">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        required
+                        value={favRefGrams}
+                        onChange={(e) => setFavRefGrams(e.target.value)}
+                        className="w-full bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="text-xs text-slate-400 font-mono">g</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ENERGY ROW */}
+              <div className="flex items-center justify-between border-t border-b border-slate-200 dark:border-slate-800 py-3.5 my-1 text-slate-900 dark:text-slate-100">
+                <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Energy</span>
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg focus-within:border-indigo-500 transition">
                   <input
                     type="number"
                     inputMode="numeric"
+                    required
                     value={favCalories}
                     onChange={(e) => setFavCalories(e.target.value)}
-                    className="w-full px-2 py-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                    className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right font-bold text-xs focus:outline-none"
                   />
+                  <span className="text-xs font-bold font-mono text-slate-400">kcal</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Pro (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    value={favProtein}
-                    onChange={(e) => setFavProtein(e.target.value)}
-                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
-                  />
+              {/* NUTRIENT FIELDS FORM SHEET */}
+              <div className="space-y-3">
+                {/* PROTEIN */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Protein</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-indigo-500 transition">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      placeholder="0"
+                      value={favProtein}
+                      onChange={(e) => setFavProtein(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Carb (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    value={favCarbs}
-                    onChange={(e) => setFavCarbs(e.target.value)}
-                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
-                  />
+
+                {/* CARBS GROUP */}
+                <div className="space-y-2.5 border-b border-slate-100 dark:border-slate-800/60 pb-2.5">
+                  <div className="flex items-center justify-between text-slate-900 dark:text-slate-100">
+                    <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Carbohydrate</span>
+                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-indigo-500 transition">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        placeholder="0"
+                        value={favCarbs}
+                        onChange={(e) => setFavCarbs(e.target.value)}
+                        className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                    </div>
+                  </div>
+
+                  {/* NESTED CHILDREN (SUGAR & FIBER) */}
+                  <div className="pl-4 border-l border-slate-200 dark:border-slate-800/80 space-y-2.5 ml-1">
+                    {/* Sugar */}
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">└─</span> Sugar
+                      </span>
+                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md focus-within:border-indigo-500 transition">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.1"
+                          placeholder="0"
+                          value={favSugar}
+                          onChange={(e) => setFavSugar(e.target.value)}
+                          className="w-14 bg-transparent text-slate-800 dark:text-slate-200 font-mono text-right text-xs focus:outline-none"
+                        />
+                        <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                      </div>
+                    </div>
+
+                    {/* DIETARY FIBER */}
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">└─</span> Dietary Fiber
+                      </span>
+                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md focus-within:border-indigo-500 transition">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.1"
+                          placeholder="0"
+                          value={favFiber}
+                          onChange={(e) => setFavFiber(e.target.value)}
+                          className="w-14 bg-transparent text-slate-800 dark:text-slate-200 font-mono text-right text-xs focus:outline-none"
+                        />
+                        <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 font-bold truncate">Fat (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    value={favFat}
-                    onChange={(e) => setFavFat(e.target.value)}
-                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
-                  />
+
+                {/* TOTAL FAT */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Total Fat</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-indigo-500 transition">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      placeholder="0"
+                      value={favFat}
+                      onChange={(e) => setFavFat(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                  </div>
+                </div>
+
+                {/* CHOLESTEROL */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Cholesterol</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-indigo-500 transition">
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={favCholesterol}
+                      onChange={(e) => setFavCholesterol(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">mg</span>
+                  </div>
+                </div>
+
+                {/* SODIUM */}
+                <div className="flex items-center justify-between pb-1 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Sodium</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-indigo-500 transition">
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={favSodium}
+                      onChange={(e) => setFavSodium(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">mg</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Micros Details */}
-              <div className="grid grid-cols-4 gap-2 text-[10px] pt-1.5 border-t border-slate-100 dark:border-slate-800/40">
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-bold">Sugar (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    value={favSugar}
-                    onChange={(e) => setFavSugar(e.target.value)}
-                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-bold">Fiber (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    value={favFiber}
-                    onChange={(e) => setFavFiber(e.target.value)}
-                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-mono font-bold">Na (mg)</span>
-                  <input
-                    type="number"
-                    value={favSodium}
-                    onChange={(e) => setFavSodium(e.target.value)}
-                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-440 block mb-0.5 truncate font-mono font-bold">K (mg)</span>
-                  <input
-                    type="number"
-                    value={favPotassium}
-                    onChange={(e) => setFavPotassium(e.target.value)}
-                    className="w-full p-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
-                  />
-                </div>
+              {/* ACTIONS ROW */}
+              <div className="flex gap-2.5 pt-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingFavoriteId(null)}
+                  className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveFavEdit(editingFavoriteId)}
+                  className="flex-[2] py-2 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-indigo-550/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Save Changes</span>
+                </button>
               </div>
-            </div>
-
-            <div className="flex gap-2.5 pt-2.5">
-              <button
-                type="button"
-                onClick={() => setEditingFavoriteId(null)}
-                className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSaveFavEdit(editingFavoriteId)}
-                className="flex-[2] py-2 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-indigo-550/15 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Check className="w-4 h-4" />
-                <span>Save Changes</span>
-              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* POPUP 4: Log Portion of Favorite Item Modal */}
+      {(() => {
+        if (!favLoggingId) return null;
+        const targetFav = favoriteFoods.find((f) => f.id === favLoggingId);
+        if (!targetFav) return null;
+
+        const factor = (parseFloat(favLoggingGrams) || 0) / (targetFav.referenceGrams || 100);
+        const scaledCalories = Math.round(targetFav.calories * factor);
+        const scaledProtein = targetFav.protein !== undefined ? parseFloat((targetFav.protein * factor).toFixed(1)) : 0;
+        const scaledCarbs = targetFav.carbs !== undefined ? parseFloat((targetFav.carbs * factor).toFixed(1)) : 0;
+        const scaledSugar = targetFav.sugar !== undefined ? parseFloat((targetFav.sugar * factor).toFixed(1)) : 0;
+        const scaledFiber = targetFav.fiber !== undefined ? parseFloat((targetFav.fiber * factor).toFixed(1)) : 0;
+        const scaledFat = targetFav.fat !== undefined ? parseFloat((targetFav.fat * factor).toFixed(1)) : 0;
+        const scaledCholesterol = targetFav.cholesterol !== undefined ? parseFloat((targetFav.cholesterol * factor).toFixed(1)) : 0;
+        const scaledSodium = targetFav.sodium !== undefined ? parseFloat((targetFav.sodium * factor).toFixed(1)) : 0;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-350">
+            <div className="bg-white dark:bg-slate-900 border-2 border-slate-900 dark:border-slate-700 rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans">
+              
+              {/* HEADER ROW */}
+              <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800/80 pb-2.5">
+                <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                  <Plus className="w-4.5 h-4.5 text-rose-500 animate-pulse" />
+                  Log Portion of Favorite
+                </span>
+              </div>
+
+
+              <div className="space-y-4 text-xs">
+                {/* FOOD DESCRIPTION */}
+                <div className="relative">
+                  <span className="text-[12px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block mb-1">
+                    FOOD DESCRIPTION
+                  </span>
+                  <div className="border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950 p-1">
+                    <input
+                      type="text"
+                      disabled
+                      value={targetFav.name}
+                      className="w-full px-2 py-1 text-xs bg-transparent focus:outline-none text-slate-400 dark:text-slate-500 font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* SERVING SIZE GROUP */}
+                <div className="space-y-1.5">
+                  <span className="text-[12px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">
+                    Serving Size
+                  </span>
+                  <div className="bg-slate-50 dark:bg-[#0d111c]/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/80">
+                    <div>
+                      <span className="text-[10px] uppercase font-sans font-semibold text-slate-400 dark:text-slate-500 block mb-1">Grams eaten</span>
+                      <div className="flex items-center gap-1.5 bg-white dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg focus-within:border-rose-500 transition">
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          required
+                          value={favLoggingGrams}
+                          onChange={(e) => setFavLoggingGrams(e.target.value)}
+                          className="w-full bg-transparent text-rose-500 dark:text-rose-400 font-mono text-right text-xs font-bold focus:outline-none"
+                        />
+                        <span className="text-xs text-slate-400 font-mono">g</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ENERGY ROW */}
+                <div className="flex items-center justify-between border-t border-b border-slate-200 dark:border-slate-800 py-3.5 my-1 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Energy</span>
+                  <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${scaledCalories}`}
+                      className="w-16 bg-transparent text-slate-400 dark:text-slate-500 font-mono text-right font-bold text-xs focus:outline-none"
+                    />
+                    <span className="text-xs font-bold font-mono text-slate-400">kcal</span>
+                  </div>
+                </div>
+
+                {/* NUTRIENT FIELDS FORM SHEET */}
+                <div className="space-y-3">
+                  {/* PROTEIN */}
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                    <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Protein</span>
+                    <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${scaledProtein}`}
+                        className="w-16 bg-transparent text-slate-400 dark:text-slate-500 font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                    </div>
+                  </div>
+
+                  {/* CARBS GROUP */}
+                  <div className="space-y-2.5 border-b border-slate-100 dark:border-slate-800/60 pb-2.5">
+                    <div className="flex items-center justify-between text-slate-900 dark:text-slate-100">
+                      <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Carbohydrate</span>
+                      <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg">
+                        <input
+                          type="text"
+                          readOnly
+                          value={`${scaledCarbs}`}
+                          className="w-16 bg-transparent text-slate-400 dark:text-slate-500 font-mono text-right text-xs focus:outline-none"
+                        />
+                        <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                      </div>
+                    </div>
+
+                    {/* NESTED CHILDREN (SUGAR & FIBER) */}
+                    <div className="pl-4 border-l border-slate-200 dark:border-slate-800/80 space-y-2.5 ml-1">
+                      {/* Sugar */}
+                      <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">└─</span> Sugar
+                        </span>
+                        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md">
+                          <input
+                            type="text"
+                            readOnly
+                            value={`${scaledSugar}`}
+                            className="w-14 bg-transparent text-slate-400 dark:text-slate-500 font-mono text-right text-xs focus:outline-none"
+                          />
+                          <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                        </div>
+                      </div>
+
+                      {/* DIETARY FIBER */}
+                      <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">└─</span> Dietary Fiber
+                        </span>
+                        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md">
+                          <input
+                            type="text"
+                            readOnly
+                            value={`${scaledFiber}`}
+                            className="w-14 bg-transparent text-slate-400 dark:text-slate-500 font-mono text-right text-xs focus:outline-none"
+                          />
+                          <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TOTAL FAT */}
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                    <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Total Fat</span>
+                    <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${scaledFat}`}
+                        className="w-16 bg-transparent text-slate-400 dark:text-slate-500 font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                    </div>
+                  </div>
+
+                  {/* CHOLESTEROL */}
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                    <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Cholesterol</span>
+                    <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${scaledCholesterol}`}
+                        className="w-16 bg-transparent text-slate-400 dark:text-slate-500 font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="w-4 font-mono text-[10px] text-slate-400 text-left">mg</span>
+                    </div>
+                  </div>
+
+                  {/* SODIUM */}
+                  <div className="flex items-center justify-between pb-1 text-slate-900 dark:text-slate-100">
+                    <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Sodium</span>
+                    <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg">
+                      <input
+                        type="text"
+                        readOnly
+                        value={`${scaledSodium}`}
+                        className="w-16 bg-transparent text-slate-400 dark:text-slate-500 font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="w-4 font-mono text-[10px] text-slate-400 text-left">mg</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ACTIONS ROW */}
+                <div className="flex gap-2.5 pt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setFavLoggingId(null)}
+                    className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const amt = parseFloat(favLoggingGrams) || targetFav.referenceGrams || 100;
+                      handleLogFavorite(targetFav, amt);
+                      setFavLoggingId(null);
+                    }}
+                    className="flex-[2] py-2 bg-rose-500 hover:bg-rose-600 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-rose-550/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Log Portion</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* POPUP: Confirm Delete Favorite Food Modal */}
       {confirmDeleteFavId && (
@@ -2086,11 +2382,11 @@ export default function DietWidget({
           </div>
         </div>
       )}
-
       {/* POPUP 3: Edit Logged Meal Today Modal */}
       {editingMealId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-350">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-350">
+          <div className="bg-white dark:bg-slate-900 border-2 border-slate-900 dark:border-slate-700 rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans">
+            {/* HEADER ROW */}
             <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800/80 pb-2.5">
               <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-violet-600 dark:text-violet-400 flex items-center gap-1.5">
                 <Edit3 className="w-4.5 h-4.5 text-violet-500" />
@@ -2098,146 +2394,209 @@ export default function DietWidget({
               </span>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 font-bold">Meal Name Description</span>
-                <input
-                  type="text"
-                  value={editMealName}
-                  onChange={(e) => setEditMealName(e.target.value)}
-                  className="w-full px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-violet-400 text-slate-800 dark:text-slate-100 font-bold"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5 bg-violet-500/5 dark:bg-violet-500/10 border border-violet-500/15 p-2.5 rounded-2xl">
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-violet-600 dark:text-violet-400 block mb-0.5 font-bold">Weight Eaten (g)</span>
+            <div className="space-y-4 text-xs">
+              {/* FOOD DESCRIPTION */}
+              <div className="relative">
+                <span className="text-[12px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block mb-1">
+                  FOOD DESCRIPTION
+                </span>
+                <div className="border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950 p-1">
                   <input
-                    type="number"
-                    inputMode="numeric"
-                    value={editMealWeightGrams}
-                    onChange={(e) => handleEditWeightGramsChange(e.target.value)}
-                    className="w-full px-2.5 py-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                    type="text"
+                    required
+                    placeholder="e.g. Steak Salad"
+                    value={editMealName}
+                    onChange={(e) => setEditMealName(e.target.value)}
+                    className="w-full px-2 py-1 text-xs bg-transparent focus:outline-none text-slate-900 dark:text-slate-100 font-bold"
+                    autoComplete="off"
                   />
                 </div>
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 font-bold">Energy (kcal)</span>
+              </div>
+
+              {/* SERVING SIZE GROUP */}
+              <div className="space-y-1.5">
+                <span className="text-[12px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">
+                  Serving Size
+                </span>
+                <div className="bg-slate-50 dark:bg-[#0d111c]/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/80">
+                  <div>
+                    <span className="text-[10px] uppercase font-sans font-semibold text-slate-400 dark:text-slate-500 block mb-1">Weight Eaten</span>
+                    <div className="flex items-center gap-1.5 bg-white dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg focus-within:border-violet-500 transition">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        required
+                        value={editMealWeightGrams}
+                        onChange={(e) => handleEditWeightGramsChange(e.target.value)}
+                        className="w-full bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="text-xs text-slate-400 font-mono">g</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ENERGY ROW */}
+              <div className="flex items-center justify-between border-t border-b border-slate-200 dark:border-slate-800 py-3.5 my-1 text-slate-900 dark:text-slate-100">
+                <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Energy</span>
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg focus-within:border-violet-500 transition">
                   <input
                     type="number"
                     inputMode="numeric"
+                    required
                     value={editMealCalories}
                     onChange={(e) => setEditMealCalories(e.target.value)}
-                    className="w-full px-2.5 py-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
+                    className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right font-bold text-xs focus:outline-none"
                   />
+                  <span className="text-xs font-bold font-mono text-slate-400">kcal</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 font-bold truncate">Protein (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="-"
-                    step="0.1"
-                    value={editMealProtein}
-                    onChange={(e) => setEditMealProtein(e.target.value)}
-                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
-                  />
+              {/* NUTRIENT FIELDS FORM SHEET */}
+              <div className="space-y-3">
+                {/* PROTEIN */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Protein</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-violet-500 transition">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      placeholder="0"
+                      value={editMealProtein}
+                      onChange={(e) => setEditMealProtein(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 font-bold truncate">Carbs (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="-"
-                    step="0.1"
-                    value={editMealCarbs}
-                    onChange={(e) => setEditMealCarbs(e.target.value)}
-                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
-                  />
+
+                {/* CARBS GROUP */}
+                <div className="space-y-2.5 border-b border-slate-100 dark:border-slate-800/60 pb-2.5">
+                  <div className="flex items-center justify-between text-slate-900 dark:text-slate-100">
+                    <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Carbohydrate</span>
+                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-violet-500 transition">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        placeholder="0"
+                        value={editMealCarbs}
+                        onChange={(e) => setEditMealCarbs(e.target.value)}
+                        className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                    </div>
+                  </div>
+
+                  {/* NESTED CHILDREN (SUGAR & FIBER) */}
+                  <div className="pl-4 border-l border-slate-200 dark:border-slate-800/80 space-y-2.5 ml-1">
+                    {/* Sugar */}
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">└─</span> Sugar
+                      </span>
+                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md focus-within:border-violet-500 transition">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.1"
+                          placeholder="0"
+                          value={editMealSugar}
+                          onChange={(e) => setEditMealSugar(e.target.value)}
+                          className="w-14 bg-transparent text-slate-800 dark:text-slate-200 font-mono text-right text-xs focus:outline-none"
+                        />
+                        <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                      </div>
+                    </div>
+
+                    {/* DIETARY FIBER */}
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">└─</span> Dietary Fiber
+                      </span>
+                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md focus-within:border-violet-500 transition">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.1"
+                          placeholder="0"
+                          value={editMealFiber}
+                          onChange={(e) => setEditMealFiber(e.target.value)}
+                          className="w-14 bg-transparent text-slate-800 dark:text-slate-200 font-mono text-right text-xs focus:outline-none"
+                        />
+                        <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[9px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 font-bold truncate">Fat (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="-"
-                    step="0.1"
-                    value={editMealFat}
-                    onChange={(e) => setEditMealFat(e.target.value)}
-                    className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center"
-                  />
+
+                {/* TOTAL FAT */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Total Fat</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-violet-500 transition">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      placeholder="0"
+                      value={editMealFat}
+                      onChange={(e) => setEditMealFat(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                  </div>
+                </div>
+
+                {/* CHOLESTEROL */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Cholesterol</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-violet-500 transition">
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={editMealCholesterol}
+                      onChange={(e) => setEditMealCholesterol(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">mg</span>
+                  </div>
+                </div>
+
+                {/* SODIUM */}
+                <div className="flex items-center justify-between pb-1 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Sodium</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-violet-500 transition">
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={editMealSodium}
+                      onChange={(e) => setEditMealSodium(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">mg</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Advanced micro row */}
-              <div className="grid grid-cols-4 gap-2 text-[10px] pt-1.5 border-t border-slate-100 dark:border-slate-800/40">
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 truncate">Sugar (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="-"
-                    step="0.1"
-                    value={editMealSugar}
-                    onChange={(e) => setEditMealSugar(e.target.value)}
-                    className="w-full p-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 truncate">Fiber (g)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="-"
-                    step="0.1"
-                    value={editMealFiber}
-                    onChange={(e) => setEditMealFiber(e.target.value)}
-                    className="w-full p-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 truncate font-mono">Na (mg)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="-"
-                    value={editMealSodium}
-                    onChange={(e) => setEditMealSodium(e.target.value)}
-                    className="w-full p-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <span className="text-[8px] uppercase font-mono text-slate-400 dark:text-slate-500 block mb-0.5 truncate font-mono">K (mg)</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="-"
-                    value={editMealPotassium}
-                    onChange={(e) => setEditMealPotassium(e.target.value)}
-                    className="w-full p-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-center text-slate-800 dark:text-slate-100 font-mono font-bold"
-                  />
-                </div>
+              {/* FOOTER ACTIONS ROW */}
+              <div className="flex gap-3 pt-4 border-t border-slate-150 dark:border-slate-800/80">
+                <button
+                  type="button"
+                  onClick={() => setEditingMealId(null)}
+                  className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveMealEdit(editingMealId)}
+                  className="flex-[2] py-2.5 bg-violet-600 hover:bg-violet-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-violet-500/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Save Changes</span>
+                </button>
               </div>
-            </div>
-
-            <div className="flex gap-2.5 pt-2.5">
-              <button
-                type="button"
-                onClick={() => setEditingMealId(null)}
-                className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSaveMealEdit(editingMealId)}
-                className="flex-[2] py-2 bg-violet-650 hover:bg-violet-700 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-violet-500/15 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Check className="w-4 h-4" />
-                <span>Save Changes</span>
-              </button>
             </div>
           </div>
         </div>
@@ -2245,14 +2604,14 @@ export default function DietWidget({
 
       {/* POPUP: Add Consumed Meal Today Modal */}
       {showAddMealModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-300 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans max-h-[95vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-slate-900 border-2 border-slate-900 dark:border-slate-700 rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-4 text-left animate-in zoom-in-95 duration-150 font-sans max-h-[95vh] overflow-y-auto">
+            {/* [Edit Icon] <Title of the card> */}
             <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-800/80 pb-2.5">
               <span className="text-xs uppercase font-mono tracking-wider font-extrabold text-rose-500 flex items-center gap-1.5">
                 <Flame className="w-4.5 h-4.5 text-rose-500 animate-pulse" />
                 Add Meal/Snack Today
               </span>
-              {/* Note: The 'x' button at the top right is not present, as requested. */}
             </div>
 
             <form 
@@ -2264,21 +2623,27 @@ export default function DietWidget({
               }} 
               className="space-y-4 text-xs"
             >
+              {/* FOOD DESCRIPTION */}
               <div className="relative" ref={suggestionRef}>
-                <label className="text-[10px] text-slate-400 dark:text-slate-440 uppercase block mb-1 font-mono font-bold">Meal/Snack Description</label>
-                <input
-                  id="meal-name"
-                  type="text"
-                  placeholder="Avocado Salmon Sourdough"
-                  value={mealName}
-                  onFocus={() => setShowSuggestions(true)}
-                  onChange={(e) => {
-                    setMealName(e.target.value);
-                    setShowSuggestions(true);
-                  }}
-                  className="w-full px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-rose-300 focus:border-rose-500 text-slate-850 dark:text-slate-100 font-sans font-bold"
-                  autoComplete="off"
-                />
+                <span className="text-[12px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block mb-1">
+                  FOOD DESCRIPTION
+                </span>
+                <div className="border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950 p-1">
+                  <input
+                    id="meal-name"
+                    type="text"
+                    required
+                    placeholder="e.g. Avocado Salmon Sourdough"
+                    value={mealName}
+                    onFocus={() => setShowSuggestions(true)}
+                    onChange={(e) => {
+                      setMealName(e.target.value);
+                      setShowSuggestions(true);
+                    }}
+                    className="w-full px-2 py-1 text-xs bg-transparent focus:outline-none text-slate-900 dark:text-slate-100 font-bold"
+                    autoComplete="off"
+                  />
+                </div>
 
                 {showSuggestions && matchingSuggestions.length > 0 && (
                   <div 
@@ -2304,7 +2669,7 @@ export default function DietWidget({
                           setCarbs(suggestion.carbs !== undefined ? String(suggestion.carbs) : '');
                           setFat(suggestion.fat !== undefined ? String(suggestion.fat) : '');
                           setSodium(suggestion.sodium !== undefined ? String(suggestion.sodium) : '');
-                          setPotassium(suggestion.potassium !== undefined ? String(suggestion.potassium) : '');
+                          setCholesterol(suggestion.cholesterol !== undefined ? String(suggestion.cholesterol) : '');
                           setFiber(suggestion.fiber !== undefined ? String(suggestion.fiber) : '');
                           setSugar(suggestion.sugar !== undefined ? String(suggestion.sugar) : '');
                           setMealRefGrams(String(suggestion.referenceGrams || 100));
@@ -2326,95 +2691,107 @@ export default function DietWidget({
                 )}
               </div>
 
-              <div>
-                <label className="text-[10px] text-slate-400 dark:text-slate-440 uppercase block mb-1 font-mono font-bold">Energy (kcal)</label>
-                <input
-                  id="meal-calories"
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="420"
-                  value={mealCalories}
-                  onChange={(e) => setMealCalories(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-rose-300 focus:border-rose-500 text-slate-850 dark:text-slate-100 font-sans font-bold"
-                />
+              {/* SERVING SIZE GROUP */}
+              <div className="space-y-1.5">
+                <span className="text-[12px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">
+                  Serving Size
+                </span>
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 dark:bg-[#0d111c]/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/80">
+                  <div>
+                    <span className="text-[10px] uppercase font-sans font-semibold text-slate-400 dark:text-slate-500 block mb-1">Base Weight</span>
+                    <div className="flex items-center gap-1.5 bg-white dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg focus-within:border-rose-500 transition">
+                      <input
+                        id="meal-ref-grams"
+                        type="number"
+                        inputMode="numeric"
+                        required
+                        value={mealRefGrams}
+                        onChange={(e) => setMealRefGrams(e.target.value)}
+                        className="w-full bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="text-xs text-slate-400 font-mono">g</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-sans font-semibold text-slate-400 dark:text-slate-500 block mb-1">Consumed</span>
+                    <div className="flex items-center gap-1.5 bg-white dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg focus-within:border-rose-500 transition">
+                      <input
+                        id="meal-consumed-grams"
+                        type="number"
+                        inputMode="numeric"
+                        required
+                        value={mealConsumedGrams}
+                        onChange={(e) => setMealConsumedGrams(e.target.value)}
+                        className="w-full bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="text-xs text-slate-400 font-mono">g</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 bg-rose-500/5 dark:bg-rose-500/10 border border-rose-500/15 p-3 rounded-2xl">
-                <div>
-                  <label className="text-[9px] text-rose-600 dark:text-rose-455 uppercase block mb-1 font-mono font-bold truncate">Base Weight (g)</label>
+              {/* ENERGY ROWS */}
+              <div className="flex items-center justify-between border-t border-b border-slate-200 dark:border-slate-800 py-3.5 my-1 text-slate-900 dark:text-slate-100">
+                <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Energy</span>
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1.5 rounded-lg focus-within:border-rose-500 transition">
                   <input
-                    id="meal-ref-grams"
+                    id="meal-calories"
                     type="number"
                     inputMode="numeric"
-                    placeholder="100"
-                    value={mealRefGrams}
-                    onChange={(e) => setMealRefGrams(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                    required
+                    value={mealCalories}
+                    onChange={(e) => setMealCalories(e.target.value)}
+                    className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right font-bold text-xs focus:outline-none"
                   />
-                </div>
-                <div>
-                  <label className="text-[9px] text-rose-600 dark:text-rose-455 uppercase block mb-1 font-mono font-bold truncate">Consumed (g)</label>
-                  <input
-                    id="meal-consumed-grams"
-                    type="number"
-                    inputMode="numeric"
-                    placeholder="100"
-                    value={mealConsumedGrams}
-                    onChange={(e) => setMealConsumedGrams(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
-                  />
+                  <span className="text-xs font-bold font-mono text-slate-400">kcal</span>
                 </div>
               </div>
 
-              {(
-                <div className="space-y-3 p-3 bg-slate-50 dark:bg-slate-950/80 border border-slate-150 dark:border-slate-800 rounded-2xl">
-                  {/* Macros Group */}
-                  <div className="space-y-1">
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="text-[8px] text-slate-400 dark:text-slate-440 uppercase block mb-0.5 font-mono font-bold leading-none">Protein (g)</label>
-                        <input
-                           type="number"
-                           inputMode="decimal"
-                           step="0.1"
-                           placeholder="0"
-                           value={protein}
-                           onChange={(e) => setProtein(e.target.value)}
-                           className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[8px] text-slate-400 dark:text-slate-440 uppercase block mb-0.5 font-mono font-bold leading-none">Carbs (g)</label>
-                        <input
-                           type="number"
-                           inputMode="decimal"
-                           step="0.1"
-                           placeholder="0"
-                           value={carbs}
-                           onChange={(e) => setCarbs(e.target.value)}
-                           className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[8px] text-slate-400 dark:text-slate-440 uppercase block mb-0.5 font-mono font-bold leading-none">Fat (g)</label>
-                        <input
-                           type="number"
-                           inputMode="decimal"
-                           step="0.1"
-                           placeholder="0"
-                           value={fat}
-                           onChange={(e) => setFat(e.target.value)}
-                           className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
-                        />
-                      </div>
+              {/* NUTRIENT FIELDS FORM SHEET */}
+              <div className="space-y-3">
+                {/* PROTEIN */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Protein</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-rose-500 transition">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      placeholder="0"
+                      value={protein}
+                      onChange={(e) => setProtein(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                  </div>
+                </div>
+
+                {/* CARBS GROUP */}
+                <div className="space-y-2.5 border-b border-slate-100 dark:border-slate-800/60 pb-2.5">
+                  <div className="flex items-center justify-between text-slate-900 dark:text-slate-100">
+                    <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Carbohydrate</span>
+                    <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-rose-500 transition">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        placeholder="0"
+                        value={carbs}
+                        onChange={(e) => setCarbs(e.target.value)}
+                        className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                      />
+                      <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
                     </div>
                   </div>
 
-                  {/* Micros Group */}
-                  <div className="space-y-1 pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
-                    <div className="grid grid-cols-4 gap-2">
-                      <div>
-                        <span className="text-[8px] uppercase font-mono text-slate-440 dark:text-slate-550 block mb-0.5 truncate font-bold">Sugar (g)</span>
+                  {/* NESTED CHILDREN (SUGAR & FIBER) */}
+                  <div className="pl-4 border-l border-slate-200 dark:border-slate-800/80 space-y-2.5 ml-1">
+                    {/* Sugar */}
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">└─</span> Sugar
+                      </span>
+                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md focus-within:border-rose-500 transition">
                         <input
                           type="number"
                           inputMode="decimal"
@@ -2422,11 +2799,18 @@ export default function DietWidget({
                           placeholder="0"
                           value={sugar}
                           onChange={(e) => setSugar(e.target.value)}
-                          className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                          className="w-14 bg-transparent text-slate-800 dark:text-slate-200 font-mono text-right text-xs focus:outline-none"
                         />
+                        <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
                       </div>
-                      <div>
-                        <span className="text-[8px] uppercase font-mono text-slate-440 dark:text-slate-550 block mb-0.5 truncate font-bold">Fiber (g)</span>
+                    </div>
+
+                    {/* DIETARY FIBER */}
+                    <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">└─</span> Dietary Fiber
+                      </span>
+                      <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-md focus-within:border-rose-500 transition">
                         <input
                           type="number"
                           inputMode="decimal"
@@ -2434,50 +2818,80 @@ export default function DietWidget({
                           placeholder="0"
                           value={fiber}
                           onChange={(e) => setFiber(e.target.value)}
-                          className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
+                          className="w-14 bg-transparent text-slate-800 dark:text-slate-200 font-mono text-right text-xs focus:outline-none"
                         />
-                      </div>
-                      <div>
-                        <span className="text-[8px] uppercase font-mono text-slate-440 dark:text-slate-550 block mb-0.5 truncate font-mono font-bold">Na (mg)</span>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={sodium}
-                          onChange={(e) => setSodium(e.target.value)}
-                          className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-[8px] uppercase font-mono text-slate-440 dark:text-slate-550 block mb-0.5 truncate font-mono font-bold">K (mg)</span>
-                        <input
-                          type="number"
-                          placeholder="0"
-                          value={potassium}
-                          onChange={(e) => setPotassium(e.target.value)}
-                          className="w-full p-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-100 font-mono text-center font-bold"
-                        />
+                        <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
                       </div>
                     </div>
                   </div>
                 </div>
-              )}
 
-              <div className="flex gap-2.5 pt-2">
+                {/* TOTAL FAT */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Total Fat</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-rose-500 transition">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      placeholder="0"
+                      value={fat}
+                      onChange={(e) => setFat(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">g</span>
+                  </div>
+                </div>
+
+                {/* CHOLESTEROL */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Cholesterol</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-rose-500 transition">
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={cholesterol}
+                      onChange={(e) => setCholesterol(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">mg</span>
+                  </div>
+                </div>
+
+                {/* SODIUM */}
+                <div className="flex items-center justify-between pb-1 text-slate-900 dark:text-slate-100">
+                  <span className="text-[12px] font-mono tracking-wider text-slate-500 dark:text-slate-400 font-extrabold block">Sodium</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-[#05080f] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg focus-within:border-rose-500 transition">
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={sodium}
+                      onChange={(e) => setSodium(e.target.value)}
+                      className="w-16 bg-transparent text-slate-900 dark:text-white font-mono text-right text-xs focus:outline-none"
+                    />
+                    <span className="w-4 font-mono text-[10px] text-slate-400 text-left">mg</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* FOOTER ACTIONS ROW */}
+              <div className="flex gap-3 pt-3">
                 <button
                   type="button"
                   onClick={() => setShowAddMealModal(false)}
-                  className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-705 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                  className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-[2] py-2 bg-rose-500 hover:bg-rose-600 text-xs font-bold text-white rounded-xl transition shadow-lg shadow-rose-555/15 flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="flex-[2] py-2.5 bg-rose-500 hover:bg-rose-600 text-xs font-bold text-white rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-rose-600/15 dark:shadow-none"
                 >
-                  <Check className="w-4 h-4" />
+                  <Check className="w-4 h-4 stroke-[2.5]" />
                   <span>Log Consumed Meal</span>
                 </button>
               </div>
+
             </form>
           </div>
         </div>

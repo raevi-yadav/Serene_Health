@@ -8,7 +8,7 @@ export interface Meal {
   carbs?: number;   // in grams
   fat?: number;     // in grams
   sodium?: number;  // in mg
-  potassium?: number; // in mg
+  cholesterol?: number; // in mg
   fiber?: number;   // in grams
   sugar?: number;   // in grams
   weightGrams?: number; // weight in grams

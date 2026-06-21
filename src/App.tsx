@@ -19,7 +19,9 @@ import {
   Clock,
   Home,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Bell,
+  BellRing
 } from 'lucide-react';
 import { DailyRecord, UserSettings } from './types';
 import { Capacitor } from '@capacitor/core';
@@ -43,6 +45,7 @@ import ConsistencyCalendar from './components/ConsistencyCalendar';
 import TimelineHistoryWidget from './components/TimelineHistoryWidget';
 import ReflectionWidget from './components/ReflectionWidget';
 import ReflectionJournal from './components/ReflectionJournal';
+import { triggerHaptic } from './utils/haptic';
 
 const DEFAULT_SETTINGS: UserSettings = {
   defaultGlassSizeMl: 250,
@@ -67,6 +70,102 @@ export default function App() {
   const [activeAppTab, setActiveAppTab] = useState<AppTab>('home');
 
   // Wellness Metrics popup/inline editing temporary state managers
+  const [user, setUser] = useState<{ email: string; name: string; photoURL: string } | null>(() => {
+    const saved = localStorage.getItem('serene_health_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  
+  // Daily notification reminders state
+  const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
+  const [isNightlyReminderEnabled, setIsNightlyReminderEnabled] = useState(() => {
+    const saved = localStorage.getItem('serene_nightly_reminder');
+    return saved !== 'disabled';
+  });
+  const [isMorningReminderEnabled, setIsMorningReminderEnabled] = useState(() => {
+    const saved = localStorage.getItem('serene_morning_reminder');
+    return saved !== 'disabled';
+  });
+  const [notificationsList, setNotificationsList] = useState<{ id: string; title: string; text: string; time: string; read: boolean }[]>([]);
+  const [activeToast, setActiveToast] = useState<{ title: string; text: string; type: string } | null>(null);
+
+  // Background check for 11:00 PM and 7:00 AM everyday reminders
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      const hrs = now.getHours();
+      const mins = now.getMinutes();
+
+      // Lock duplicate alerts on the same date
+      const dateStringKey = now.toISOString().split('T')[0];
+
+      // Nightly Log Alert (11:00 PM -> hrs === 23 && mins === 0)
+      if (hrs === 23 && mins === 0 && isNightlyReminderEnabled) {
+        const nightLock = localStorage.getItem(`night_alert_fired_${dateStringKey}`);
+        if (!nightLock) {
+          localStorage.setItem(`night_alert_fired_${dateStringKey}`, 'true');
+          const title = "Nightly Logger Reminder 🌙";
+          const text = "Time to log your food intake and workouts of today to maintain your active month streak!";
+          setActiveToast({ title, text, type: 'night' });
+          setNotificationsList(prev => [
+            { id: Date.now().toString(), title, text, time: '11:00 PM', read: false },
+            ...prev
+          ]);
+          triggerHaptic([30, 20, 30]);
+        }
+      }
+
+      // Morning Sleep tracker alarm (7:00 AM -> hrs === 7 && mins === 0)
+      if (hrs === 7 && mins === 0 && isMorningReminderEnabled) {
+        const morningLock = localStorage.getItem(`morning_alert_fired_${dateStringKey}`);
+        if (!morningLock) {
+          localStorage.setItem(`morning_alert_fired_${dateStringKey}`, 'true');
+          const title = "Sunrise Sleep Logger ☀️";
+          const text = "Wake up! Log your sleep and wake timings to track your restful hours.";
+          setActiveToast({ title, text, type: 'morning' });
+          setNotificationsList(prev => [
+            { id: Date.now().toString(), title, text, time: '7:00 AM', read: false },
+            ...prev
+          ]);
+          triggerHaptic([30, 20, 30]);
+        }
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [isNightlyReminderEnabled, isMorningReminderEnabled]);
+
+  // Timed dismiss for Active Toast Alert
+  useEffect(() => {
+    if (activeToast) {
+      const timer = setTimeout(() => {
+        setActiveToast(null);
+      }, 7500);
+      return () => clearTimeout(timer);
+    }
+  }, [activeToast]);
+
+  const simulateNightlyFired = () => {
+    triggerHaptic([20, 15, 20]);
+    const title = "Nightly Logger Reminder 🌙";
+    const text = "Time to log your food intake and workouts of today to maintain your active month streak!";
+    setActiveToast({ title, text, type: 'night' });
+    setNotificationsList(prev => [
+      { id: Date.now().toString(), title, text, time: '11:00 PM (Test Log)', read: false },
+      ...prev
+    ]);
+  };
+
+  const simulateMorningFired = () => {
+    triggerHaptic([20, 15, 20]);
+    const title = "Sunrise Sleep Logger ☀️";
+    const text = "Wake up! Log your sleep and wake timings to track your restful hours.";
+    setActiveToast({ title, text, type: 'morning' });
+    setNotificationsList(prev => [
+      { id: Date.now().toString(), title, text, time: '7:00 AM (Test Log)', read: false },
+      ...prev
+    ]);
+  };
   const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
   const [profileTargetCalories, setProfileTargetCalories] = useState<number>(DEFAULT_SETTINGS.targetCalories);
   const [profileHeightCm, setProfileHeightCm] = useState<number>(DEFAULT_SETTINGS.heightCm);
@@ -481,6 +580,37 @@ export default function App() {
     return null;
   };
 
+  // 1. Calculate historical completion progress scores for day strip capsules
+  const getDayProgress = (dateStr: string) => {
+    const r = records[dateStr];
+    if (!r) return 0;
+    const sProg = Math.min(((r.sleep?.hours || 0) / settings.targetSleepHours) * 100, 100);
+    const wProg = Math.min(((r.water?.totalMl || 0) / settings.targetWaterMl) * 100, 100);
+    const eProg = Math.min(((r.exercise?.durationMinutes || 0) / settings.targetExerciseMinutes) * 100, 100);
+    const dProg = Math.min(((r.diet?.calories || 0) / settings.targetCalories || 0) * 100, 100);
+    const adjustedDiet = dProg > 100 ? 200 - dProg : dProg;
+    return Math.round((sProg + wProg + eProg + adjustedDiet) / 4);
+  };
+
+  // 2. Compute a rolling 7-day strip centered on activeDate (capped at today)
+  // Compute a rolling 7-day strip perfectly centered on activeDate
+  const getHorizontalStripDates = () => {
+    if (!activeDate) return [];
+    const [year, month, day] = activeDate.split('-').map(Number);
+    
+    const dates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(year, month - 1, day);
+      // Fixed -3 offset always keeps the selected day dead-center
+      d.setDate(d.getDate() + (-3 + i)); 
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      dates.push(`${yyyy}-${mm}-${dd}`);
+    }
+    return dates;
+  };
+
   const currentRecord = getActiveRecord();
   const sleepProgress = Math.min((currentRecord.sleep.hours / settings.targetSleepHours) * 100, 100);
   const waterProgress = Math.min((currentRecord.water.totalMl / settings.targetWaterMl) * 100, 100);
@@ -586,7 +716,7 @@ export default function App() {
         )}
 
         {/* Core application body */}
-        <div
+         <div
           id="app-body-container"
           className={`p-4 sm:p-6 space-y-6 flex-1 ${
             isMobilePreviewFrame
@@ -594,95 +724,183 @@ export default function App() {
               : ''
           }`}
         >
-          
           {/* Header */}
           <header className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2 text-indigo-650 dark:text-indigo-400">
                 <Heart className="w-4 h-4 fill-rose-500 text-rose-500 animate-pulse" />
-                <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-extrabold block">Circadia</span>
+                <h1 className="text-xl font-sans font-extrabold tracking-tight text-slate-800 dark:text-slate-100">
+                  {greeting}, {user ? user.name.split(' ')[0] : 'Guest'}
+                </h1>
               </div>
-              <h1 className="text-xl font-sans font-extrabold tracking-tight text-slate-800 dark:text-slate-100 mt-0.5">
-                {greeting}, Ravi
-              </h1>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 font-sans">Your Health Companion</p>
             </div>
 
-            {/* Light/Dark Toggle */}
-            <button
-              id="theme-mode-toggle"
-              type="button"
-              onClick={toggleTheme}
-              className="p-2.5 rounded-2xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all flex items-center justify-center shadow-subtle dark:shadow-none"
-              title={isDarkMode ? 'Light view' : 'Dark view'}
-            >
-              {isDarkMode ? (
-                <Sun className="w-4 h-4 text-amber-400 fill-amber-300" />
-              ) : (
-                <Moon className="w-4 h-4 text-slate-500" />
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Light/Dark Toggle */}
+              <button
+                id="theme-mode-toggle"
+                type="button"
+                onClick={toggleTheme}
+                className="p-2.5 rounded-2xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-550 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all flex items-center justify-center shadow-subtle dark:shadow-none"
+                title={isDarkMode ? 'Light view' : 'Dark view'}
+              >
+                {isDarkMode ? (
+                  <Sun className="w-4 h-4 text-amber-400 fill-amber-300" />
+                ) : (
+                  <Moon className="w-4 h-4 text-slate-500" />
+                )}
+              </button>
+            </div>
           </header>
 
-          {/* Date Navigator (Persistent for calendar queries unless we're strictly on Profile) */}
+          {/* Modern Premium Horizontal Day Strip Navigator */}
           {activeAppTab !== 'profile' && (
             <div
               id="date-navigator"
-              className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/90 p-3 rounded-2xl shadow-subtle dark:shadow-none selection-none"
+              className="flex flex-col gap-3.5 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/90 p-4 rounded-3xl shadow-subtle dark:shadow-none selection-none"
             >
-              <button
-                id="prev-day-btn"
-                type="button"
-                onClick={handlePrevDay}
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition"
-                title="Previous Day"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-
-              <div
-                onClick={() => {
-                  try {
-                    dateInputRef.current?.showPicker();
-                  } catch (e) {
-                    console.warn('showPicker not supported or failed', e);
-                  }
-                }}
-                className="relative hover:bg-slate-50 dark:hover:bg-slate-900/60 transition px-4 py-2 rounded-xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 flex flex-col items-center justify-center cursor-pointer group text-center min-w-[130px]"
-              >
-                <input
-                  ref={dateInputRef}
-                  type="date"
-                  value={activeDate}
-                  max={getTodayDateString()}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val && val <= getTodayDateString()) {
-                      setActiveDate(val);
-                    }
-                  }}
-                  className="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
-                  title="Choose a date"
-                />
-                <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500 font-bold font-mono group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition">
-                  <CalendarIcon className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
-                  <span>{activeDate}</span>
+              {/* Top Row Header Metadata Indicator */}
+              <div className="flex items-center justify-between px-1">
+                <div className="flex flex-col">
+                  <span className="text-[9px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-black">
+                    Timeline Monitor
+                  </span>
+                  <span className="text-sm font-sans font-black text-slate-800 dark:text-slate-100 mt-0.5">
+                    {(() => {
+                      if (!activeDate) return '';
+                      const [y, m, d] = activeDate.split('-').map(Number);
+                      return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+                    })()}
+                  </span>
                 </div>
-                <span className="text-xs font-sans font-extrabold text-slate-700 dark:text-slate-200 mt-0.5">
-                  {activeDate === getTodayDateString() ? 'Today' : formatDateLabel(activeDate)}
-                </span>
+                
+                {/* Micro Toolbar buttons */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handlePrevDay}
+                    className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition"
+                    title="Previous Day"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        dateInputRef.current?.showPicker();
+                      } catch (e) {
+                        console.warn('Fallback invocation failure', e);
+                      }
+                    }}
+                    className="p-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-950 dark:hover:bg-slate-850 text-indigo-500 dark:text-indigo-400 rounded-xl border border-slate-200/60 dark:border-slate-800/80 transition flex items-center justify-center gap-1.5"
+                  >
+                    <CalendarIcon className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-sans font-black uppercase tracking-wide hidden sm:inline">Picker</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleNextDay}
+                    disabled={activeDate >= getTodayDateString()}
+                    className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition disabled:opacity-20"
+                    title="Next Day"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
-              <button
-                id="next-day-btn"
-                type="button"
-                onClick={handleNextDay}
-                disabled={activeDate >= getTodayDateString()}
-                className="p-1.5 border border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/50 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:text-slate-300 dark:disabled:text-slate-600"
-                title="Next Day"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
+              {/* Hidden input anchor reference used to support standard calendar sheet trigger popup overlays */}
+              <input
+                ref={dateInputRef}
+                type="date"
+                value={activeDate}
+                max={getTodayDateString()}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val && val <= getTodayDateString()) {
+                    setActiveDate(val);
+                  }
+                }}
+                className="absolute opacity-0 pointer-events-none w-0 h-0"
+              />
+
+              {/* Rolling Day Pill Grid */}
+              <div className="grid grid-cols-7 gap-1.5 pt-0.5">
+                {getHorizontalStripDates().map((dateStr) => {
+                  const isSelected = dateStr === activeDate;
+                  const isToday = dateStr === getTodayDateString();
+                  const isFuture = dateStr > getTodayDateString(); // Beautifully flag future dates
+                  
+                  const [y, m, dNum] = dateStr.split('-').map(Number);
+                  const dObj = new Date(y, m - 1, dNum);
+                  const weekday = dObj.toLocaleDateString(undefined, { weekday: 'short' }).slice(0, 3);
+                  const progressScore = getDayProgress(dateStr);
+
+                  return (
+                    <button
+                      key={dateStr}
+                      type="button"
+                      disabled={isFuture} // Locks future days from being clickable
+                      onClick={() => {
+                        triggerHaptic([12]);
+                        setActiveDate(dateStr);
+                      }}
+                      className={`flex flex-col items-center justify-between py-2 rounded-2xl transition-all relative select-none ${
+                        isSelected
+                          ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white shadow-md shadow-indigo-500/20 scale-[1.02] z-10'
+                          : isFuture
+                          ? 'bg-slate-50/20 dark:bg-slate-950/10 text-slate-300 dark:text-slate-700 opacity-40 cursor-not-allowed'
+                          : 'bg-slate-50/60 hover:bg-slate-100/80 dark:bg-slate-950/40 dark:hover:bg-slate-800/60 text-slate-600 dark:text-slate-400 cursor-pointer group'
+                      }`}
+                    >
+                      {/* Weekday tag */}
+                      <span className={`text-[9px] font-black font-sans uppercase tracking-tight ${
+                        isSelected ? 'text-indigo-200' : 'text-slate-400 dark:text-slate-500'
+                      }`}>
+                        {weekday}
+                      </span>
+
+                      {/* Numeric Day label */}
+                      <span className={`text-sm font-sans font-black tracking-tight mt-0.5 ${
+                        isSelected ? 'text-white' : 'text-slate-800 dark:text-slate-200 group-hover:text-indigo-500'
+                      }`}>
+                        {dNum}
+                      </span>
+
+                      {/* Fitness Progress Indicator Mini-Capsule */}
+                      <div className="mt-1.5 flex items-center justify-center w-full px-2">
+                        {isSelected ? (
+                          <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                        ) : isFuture ? (
+                          /* Subtle empty indicator for unreached days */
+                          <div className="w-1.5 h-1.5 bg-transparent border border-dashed border-slate-200 dark:border-slate-800 rounded-full" />
+                        ) : (
+                          <div 
+                            className={`w-4 h-1 rounded-full transition-all ${
+                              progressScore >= 80 
+                                ? 'bg-emerald-500 dark:bg-emerald-400' 
+                                : progressScore >= 40 
+                                ? 'bg-amber-500' 
+                                : progressScore > 0 
+                                ? 'bg-rose-400' 
+                                : 'bg-slate-200 dark:bg-slate-800'
+                            }`}
+                            title={`Score: ${progressScore}%`}
+                          />
+                        )}
+                      </div>
+
+                      {/* Today notification dot */}
+                      {isToday && !isSelected && (
+                        <div className="absolute top-1 right-1 w-1 h-1 bg-indigo-500 dark:bg-indigo-400 rounded-full" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -691,245 +909,250 @@ export default function App() {
           {/* TAB 1: HOME */}
           {activeAppTab === 'home' && (
             <div id="tab-home-content" className="space-y-6 animate-in fade-in duration-350">
-              
-              {/* Daily Vitality Progress Banner */}
-              <div
-                id="daily-progress-banner"
-                className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 dark:border-slate-800 rounded-3xl p-5 text-white relative overflow-hidden"
-              >
-                <div className="absolute top-1/2 right-0 -translate-y-1/2 w-28 h-28 bg-emerald-500/10 blur-3xl rounded-full" />
-                <div className="absolute top-0 left-1/3 w-16 h-16 bg-indigo-500/10 blur-2xl rounded-full" />
-
-                <div className="relative">
-                  <span className="text-[10px] uppercase font-mono tracking-widest text-emerald-400 font-extrabold">
-                    Day Performance
-                  </span>
-                  <div className="flex justify-between items-end mt-1.5">
-                    <div>
-                      <h3 className="text-lg font-sans font-black tracking-tight leading-snug">Ravi's Vitality Score</h3>
-                      <p className="text-[10px] text-slate-300 mt-0.5">Weighted metrics</p>
-                    </div>
-                    <span className="text-3xl font-mono font-black tracking-tight text-emerald-400">
-                      {averageDailyScore}%
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-2 mt-4 pt-4 border-t border-slate-800">
-                    <div className="space-y-0.5">
-                      <div className="flex justify-between text-[8px] font-mono text-slate-400">
-                        <span>Sleep</span>
-                        <span>{Math.round(sleepProgress)}%</span>
-                      </div>
-                      <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-indigo-400" style={{ width: `${sleepProgress}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-0.5">
-                      <div className="flex justify-between text-[8px] font-mono text-slate-400">
-                        <span>Water</span>
-                        <span>{Math.round(waterProgress)}%</span>
-                      </div>
-                      <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-sky-400" style={{ width: `${waterProgress}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-0.5">
-                      <div className="flex justify-between text-[8px] font-mono text-slate-400">
-                        <span>Exercise</span>
-                        <span>{Math.round(exerciseProgress)}%</span>
-                      </div>
-                      <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-teal-400" style={{ width: `${exerciseProgress}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-0.5">
-                      <div className="flex justify-between text-[8px] font-mono text-slate-400">
-                        <span>Diet</span>
-                        <span>{Math.round(dietProgress)}%</span>
-                      </div>
-                      <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-rose-400" style={{ width: `${dietProgress}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
               {/* Day At a Glance widgets */}
               <div id="day-at-a-glance-section" className="space-y-2">
-                <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-extrabold">
-                  Day At A Glance
-                </span>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Calories Today */}
-                  <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
-                    <div className="flex items-start justify-between">
-                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Food Energy</span>
-                      <Flame className="w-3.5 h-3.5 text-rose-500" />
-                    </div>
-                    <div className="mt-2 text-right">
-                      <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
-                        {currentRecord.diet.calories} kcal
-                      </span>
-                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 font-semibold text-rose-500 block">
-                        Target: {settings.targetCalories} kcal
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Sleep Previously */}
-                  <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
-                    <div className="flex items-start justify-between">
-                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Sleep Quality</span>
-                      <Moon className="w-3.5 h-3.5 text-indigo-500" />
-                    </div>
-                    <div className="mt-2 text-right">
-                      <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
-                        {currentRecord.sleep.hours} hrs
-                      </span>
-                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
-                        Quality: {currentRecord.sleep.quality}/5
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Water Hydration */}
-                  <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
-                    <div className="flex items-start justify-between">
-                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Hydration</span>
-                      <Droplet className="w-3.5 h-3.5 text-sky-500" />
-                    </div>
-                    <div className="mt-2 text-right">
-                      <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
-                        {currentRecord.water.totalMl} ml
-                      </span>
-                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
-                        Target: {settings.targetWaterMl} ml
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Current weight */}
-                  <div className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between whitespace-normal">
-                    <div className="flex items-start justify-between">
-                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Body Weight</span>
-                      <Scale className="w-3.5 h-3.5 text-emerald-500" />
-                    </div>
-                    <div className="mt-2 text-right">
-                      <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
-                        {currentRecord.weight.kg ? `${currentRecord.weight.kg} kg` : (getAssumedWeightForDate(activeDate) ? `${getAssumedWeightForDate(activeDate)} kg` : '-- kg')}
-                      </span>
-                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
-                        {currentRecord.weight.kg ? `Goal: ${settings.targetWeightKg ? `${settings.targetWeightKg} kg` : 'Unset'}` : (getAssumedWeightForDate(activeDate) ? 'Assumed weight' : `Goal: ${settings.targetWeightKg ? `${settings.targetWeightKg} kg` : 'Unset'}`)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Body Mass Index (BMI) Card */}
-                  <div id="bmi-status-card" className="col-span-2 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-3xl flex flex-col justify-between whitespace-normal shadow-subtle dark:shadow-none space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-extrabold tracking-wider">Body Mass Index (BMI)</span>
+              <span className="text-[10px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-extrabold">
+                Day At A Glance
+              </span>
+              
+              <div className="grid grid-cols-2 gap-3">
+                {/* Food Energy Card */}
+                {(() => {
+                  const calories = currentRecord?.diet?.calories || 0;
+                  const target = settings?.targetCalories || 2000;
+                  const pct = Math.min(100, Math.max(0, (calories / target) * 100));
+                  return (
+                    <div className="p-3.5 pb-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between relative overflow-hidden h-[100px] whitespace-normal">
+                      <div className="flex items-start justify-between">
+                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Food Energy</span>
+                        <Flame className="w-3.5 h-3.5 text-rose-500" />
                       </div>
-                      <div className="text-[9px] font-mono text-slate-400 dark:text-slate-500 font-medium">
-                        Height: {settings.heightCm} cm
+                      <div className="mt-2 text-right">
+                        <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
+                          {calories} kcal
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 font-semibold block">
+                          Target: {target} kcal
+                        </span>
+                      </div>
+                      {/* Progress Bar Track */}
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100 dark:bg-slate-800/60">
+                        <div 
+                          className="h-full bg-gradient-to-r from-rose-500 to-orange-500 rounded-r-full transition-all duration-500" 
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
                     </div>
+                  );
+                })()}
 
-                    {calBmi !== null ? (
-                      <div className="space-y-3">
-                        <div className="flex items-baseline justify-between">
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="text-xl font-sans font-black text-slate-700 dark:text-slate-100">
-                              {calBmi}
-                            </span>
-                            <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
-                              kg/m²
-                            </span>
-                          </div>
-                          <span className={`text-[10px] font-sans font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full border ${bmiBgLight} ${bmiColorClass}`}>
-                            {bmiCategory}
+                {/* Sleep Quality Card */}
+                {(() => {
+                  const hours = currentRecord?.sleep?.hours || 0;
+                  const quality = currentRecord?.sleep?.quality || 0;
+                  // Map out max quality score scale (e.g., 5 points max scale is 100%)
+                  const pct = Math.min(100, Math.max(0, (quality / 5) * 100));
+                  return (
+                    <div className="p-3.5 pb-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between relative overflow-hidden h-[100px] whitespace-normal">
+                      <div className="flex items-start justify-between">
+                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Sleep Quality</span>
+                        <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                      </div>
+                      <div className="mt-2 text-right">
+                        <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
+                          {hours} hrs
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 block">
+                          Quality: {quality}/5
+                        </span>
+                      </div>
+                      {/* Progress Bar Track */}
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100 dark:bg-slate-800/60">
+                        <div 
+                          className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-r-full transition-all duration-500" 
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Hydration Card */}
+                {(() => {
+                  const waterMl = currentRecord?.water?.totalMl || 0;
+                  const targetMl = settings?.targetWaterMl || 2000;
+                  const pct = Math.min(100, Math.max(0, (waterMl / targetMl) * 100));
+                  return (
+                    <div className="p-3.5 pb-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between relative overflow-hidden h-[100px] whitespace-normal">
+                      <div className="flex items-start justify-between">
+                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Hydration</span>
+                        <Droplet className="w-3.5 h-3.5 text-sky-500" />
+                      </div>
+                      <div className="mt-2 text-right">
+                        <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
+                          {waterMl} ml
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 block">
+                          Target: {targetMl} ml
+                        </span>
+                      </div>
+                      {/* Progress Bar Track */}
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100 dark:bg-slate-800/60">
+                        <div 
+                          className="h-full bg-gradient-to-r from-blue-500 to-sky-400 rounded-r-full transition-all duration-500" 
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Body Weight Card */}
+                {(() => {
+                  const currentWeight = currentRecord?.weight?.kg || getAssumedWeightForDate(activeDate) || 0;
+                  const targetWeight = settings?.targetWeightKg || 0;
+                  // For body weight, if a target is present, render baseline target deviation factor proximity layout tracking 
+                  const pct = targetWeight > 0 ? Math.min(100, Math.max(0, (targetWeight / currentWeight) * 100)) : 0;
+                  return (
+                    <div className="p-3.5 pb-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between relative overflow-hidden h-[100px] whitespace-normal">
+                      <div className="flex items-start justify-between">
+                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Body Weight</span>
+                        <Scale className="w-3.5 h-3.5 text-emerald-500" />
+                      </div>
+                      <div className="mt-2 text-right">
+                        <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
+                          {currentRecord?.weight?.kg ? `${currentRecord.weight.kg} kg` : (getAssumedWeightForDate(activeDate) ? `${getAssumedWeightForDate(activeDate)} kg` : '-- kg')}
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 block truncate">
+                          {currentRecord?.weight?.kg ? `Goal: ${targetWeight ? `${targetWeight} kg` : 'Unset'}` : (getAssumedWeightForDate(activeDate) ? 'Assumed weight' : `Goal: ${targetWeight ? `${targetWeight} kg` : 'Unset'}`)}
+                        </span>
+                      </div>
+                      {/* Progress Bar Track */}
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100 dark:bg-slate-800/60">
+                        <div 
+                          className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-r-full transition-all duration-500" 
+                          style={{ width: targetWeight > 0 ? `${pct}%` : '0%' }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Exercise Done Card */}
+                {(() => {
+                  const duration = currentRecord?.exercise?.durationMinutes || 0;
+                  const targetMinutes = settings?.targetExerciseMinutes || 30;
+                  const pct = Math.min(100, Math.max(0, (duration / targetMinutes) * 100));
+                  return (
+                    <div className="p-3.5 pb-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl flex flex-col justify-between relative overflow-hidden h-[100px] whitespace-normal">
+                      <div className="flex items-start justify-between">
+                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-bold">Exercise Done</span>
+                        <Activity className="w-3.5 h-3.5 text-teal-500" />
+                      </div>
+                      <div className="mt-2 text-right">
+                        <span className="text-sm font-sans font-black text-slate-700 dark:text-slate-100 block">
+                          {duration} mins
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 block truncate">
+                          {duration > 0 
+                            ? `${currentRecord.exercise.type} (${currentRecord.exercise.intensity})`
+                            : `Goal: ${targetMinutes} mins`}
+                        </span>
+                      </div>
+                      {/* Progress Bar Track */}
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-100 dark:bg-slate-800/60">
+                        <div 
+                          className="h-full bg-gradient-to-r from-teal-500 to-cyan-400 rounded-r-full transition-all duration-500" 
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Body Mass Index (BMI) Card */}
+                <div id="bmi-status-card" className="col-span-2 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-3xl flex flex-col justify-between whitespace-normal shadow-subtle dark:shadow-none space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase font-extrabold tracking-wider">Body Mass Index (BMI)</span>
+                    </div>
+                    <div className="text-[9px] font-mono text-slate-400 dark:text-slate-500 font-medium">
+                      Height: {settings?.heightCm} cm
+                    </div>
+                  </div>
+
+                  {calBmi !== null ? (
+                    <div className="space-y-3">
+                      <div className="flex items-baseline justify-between">
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-xl font-sans font-black text-slate-700 dark:text-slate-100">
+                            {calBmi}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500">
+                            kg/m²
                           </span>
                         </div>
+                        <span className={`text-[10px] font-sans font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full border ${bmiBgLight} ${bmiColorClass}`}>
+                          {bmiCategory}
+                        </span>
+                      </div>
 
-                        {/* Interactive Dynamic Multi-segment WHO Status Bar */}
-                        <div className="space-y-1.5">
-                          <div className="relative h-2 w-full rounded-full flex bg-slate-100 dark:bg-slate-800 overflow-visible">
-                            {/* Segment 1: Underweight (< 18.5) (15 to 35 range scale) */}
-                            <div className="h-full bg-sky-400/80 rounded-l-full" style={{ width: '17.5%' }} title="Underweight (< 18.5)" />
-                            {/* Segment 2: Normal Weight (18.5 - 25.0) */}
-                            <div className="h-full bg-emerald-500/80" style={{ width: '32.5%' }} title="Normal Weight (18.5 - 24.9)" />
-                            {/* Segment 3: Overweight (25.0 - 30.0) */}
-                            <div className="h-full bg-amber-500/80" style={{ width: '25%' }} title="Overweight (25.0 - 29.9)" />
-                            {/* Segment 4: Obese (>= 30) */}
-                            <div className="h-full bg-rose-500/80 rounded-r-full" style={{ width: '25%' }} title="Obese (>= 30.0)" />
+                      {/* Interactive Dynamic Multi-segment WHO Status Bar */}
+                      <div className="space-y-1.5">
+                        <div className="relative h-2 w-full rounded-full flex bg-slate-100 dark:bg-slate-800 overflow-visible">
+                          {/* Segment 1: Underweight (< 18.5) */}
+                          <div className="h-full bg-sky-400/80 rounded-l-full" style={{ width: '17.5%' }} title="Underweight (< 18.5)" />
+                          {/* Segment 2: Normal Weight (18.5 - 25.0) */}
+                          <div className="h-full bg-emerald-500/80" style={{ width: '32.5%' }} title="Normal Weight (18.5 - 24.9)" />
+                          {/* Segment 3: Overweight (25.0 - 30.0) */}
+                          <div className="h-full bg-amber-500/80" style={{ width: '25%' }} title="Overweight (25.0 - 29.9)" />
+                          {/* Segment 4: Obese (>= 30) */}
+                          <div className="h-full bg-rose-500/80 rounded-r-full" style={{ width: '25%' }} title="Obese (>= 30.0)" />
 
-                            {/* Pointer pin at computed point on range 15 to 35 */}
-                            {(() => {
-                              const pct = Math.min(100, Math.max(0, ((calBmi - 15) / 20) * 100));
-                              return (
-                                <div
-                                  className="absolute top-1/2 -translate-y-1/2 -ml-1.5 w-3.5 h-3.5 rounded-full bg-white dark:bg-slate-900 border-2 border-slate-700 dark:border-slate-300 shadow-md transition-all duration-700"
-                                  style={{ left: `${pct}%` }}
-                                  title={`Current BMI: ${calBmi}`}
-                                />
-                              );
-                            })()}
+                          {/* Pointer pin at computed point on range 15 to 35 */}
+                          {(() => {
+                            const pct = Math.min(100, Math.max(0, ((calBmi - 15) / 20) * 100));
+                            return (
+                              <div
+                                className="absolute top-1/2 -translate-y-1/2 -ml-1.5 w-3.5 h-3.5 rounded-full bg-white dark:bg-slate-900 border-2 border-slate-700 dark:border-slate-300 shadow-md transition-all duration-700"
+                                style={{ left: `${pct}%` }}
+                                title={`Current BMI: ${calBmi}`}
+                              />
+                            );
+                          })()}
+                        </div>
+
+                        {/* Legend / Range labels */}
+                        <div className="grid grid-cols-4 gap-1 text-[8px] font-mono text-center text-slate-400 dark:text-slate-500">
+                          <div className="text-left font-semibold text-sky-500 dark:text-sky-400">
+                            &lt;18.5 (Under)
                           </div>
-
-                          {/* Legend / Range labels */}
-                          <div className="grid grid-cols-4 gap-1 text-[8px] font-mono text-center text-slate-400 dark:text-slate-500">
-                            <div className="text-left font-semibold text-sky-500 dark:text-sky-400">
-                              &lt;18.5 (Under)
-                            </div>
-                            <div className="font-semibold text-emerald-500 dark:text-emerald-400">
-                              18.5 - 24.9 (Normal)
-                            </div>
-                            <div className="font-semibold text-amber-500 dark:text-amber-400">
-                              25 - 29.9 (Over)
-                            </div>
-                            <div className="text-right font-semibold text-rose-500 dark:text-rose-500">
-                              &ge;30 (Obese)
-                            </div>
+                          <div className="font-semibold text-emerald-500 dark:text-emerald-400">
+                            18.5 - 24.9 (Normal)
+                          </div>
+                          <div className="font-semibold text-amber-500 dark:text-amber-400">
+                            25 - 29.9 (Over)
+                          </div>
+                          <div className="text-right font-semibold text-rose-500 dark:text-rose-500">
+                            &ge;30 (Obese)
                           </div>
                         </div>
                       </div>
-                    ) : (
-                      <div className="py-2.5 px-3 bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/80 rounded-xl text-center">
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400 block font-semibold">
-                          Weight is not recorded for this day
-                        </span>
-                        <span className="text-[9px] text-slate-400 dark:text-slate-500 block font-mono mt-0.5">
-                          Log today's weight under the Exercise tab to see BMI tracking.
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Did Exercise or Not strip */}
-                <div className={`p-3.5 border rounded-2xl flex items-center justify-between shadow-subtle dark:shadow-none bg-white dark:bg-slate-900 ${currentRecord.exercise.durationMinutes > 0 ? 'border-emerald-100 dark:border-emerald-950/40 bg-emerald-50/5 dark:bg-emerald-950/5' : 'border-slate-200 dark:border-slate-800'}`}>
-                  <div className="flex items-center gap-2.5">
-                    {currentRecord.exercise.durationMinutes > 0 ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-500 fill-emerald-50 dark:fill-emerald-950/20" />
-                    ) : (
-                      <AlertCircle className="w-5 h-5 text-amber-500" />
-                    )}
-                    <div>
-                      <span className="text-[10px] font-mono font-bold uppercase block text-slate-400 dark:text-slate-500">Daily Exercise Goal</span>
-                      <span className="text-xs font-sans font-bold text-slate-700 dark:text-slate-200 leading-tight">
-                        {currentRecord.exercise.durationMinutes > 0
-                          ? `Workout Completed: ${currentRecord.exercise.durationMinutes}m of ${currentRecord.exercise.type}`
-                          : `No exercises logged for this date yet (Goal: ${settings.targetExerciseMinutes} mins)`}
+                    </div>
+                  ) : (
+                    <div className="py-2.5 px-3 bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/80 rounded-xl text-center">
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block font-semibold">
+                        Weight is not recorded for this day
+                      </span>
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 block font-mono mt-0.5">
+                        Log today's weight under the Exercise tab to see BMI tracking.
                       </span>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
+            </div>
 
               {/* Daily Reflection Widget */}
               <ReflectionWidget
@@ -943,6 +1166,7 @@ export default function App() {
                 activeDate={activeDate}
                 onSelectDate={setActiveDate}
                 isDarkMode={isDarkMode}
+                settings={settings}
               />
 
               {/* Weekly Trends charts (General display) */}
@@ -1010,6 +1234,8 @@ export default function App() {
                 onWaterChange={handleWaterChange}
                 isDarkMode={isDarkMode}
                 settings={settings}
+                user={user}
+                onRequestLogin={() => setIsLoginModalOpen(true)}
               />
             </div>
           )}
@@ -1019,16 +1245,189 @@ export default function App() {
             <div id="tab-profile-content" className="space-y-6 animate-in fade-in duration-350">
               
               {/* Profile card summary */}
-              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-5 text-white shadow-nordic dark:shadow-none flex items-center gap-4 relative overflow-hidden">
-                <div className="absolute top-1/2 right-0 -translate-y-1/2 w-44 h-44 bg-white/10 blur-3xl rounded-full" />
-                <div className="w-14 h-14 bg-white/20 border border-white/30 rounded-2xl flex items-center justify-center text-white text-xl font-bold font-mono">
-                  RY
+              {user ? (
+                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-5 text-white shadow-nordic dark:shadow-none flex items-center justify-between gap-4 relative overflow-hidden">
+                  <div className="absolute top-1/2 right-0 -translate-y-1/2 w-44 h-44 bg-white/10 blur-3xl rounded-full" />
+                  <div className="flex items-center gap-4 z-10">
+                    <div className="w-14 h-14 bg-white/20 border border-white/30 rounded-2xl flex items-center justify-center text-white text-xl font-bold font-mono">
+                      {user.name.split(' ').map((n: string) => n[0]).join('')}
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black tracking-tight leading-snug">{user.name}</h3>
+                      <span className="text-[10px] font-mono text-indigo-100 uppercase tracking-widest block font-bold">Premium Member</span>
+                      <span className="block text-[9px] font-mono tracking-tight text-indigo-200 mt-0.5">{user.email}</span>
+                    </div>
+                  </div>
+                  <button
+                    id="btn-profile-signout"
+                    type="button"
+                    onClick={() => {
+                      localStorage.removeItem('serene_health_user');
+                      setUser(null);
+                      triggerHaptic(15);
+                    }}
+                    className="z-10 px-3.5 py-2 bg-red-500 hover:bg-red-650 text-white rounded-2xl text-xs font-bold transition-all cursor-pointer shadow-md shadow-red-500/10 active:scale-95 shrink-0"
+                  >
+                    Sign Out
+                  </button>
                 </div>
-                <div>
-                  <h3 className="text-base font-black tracking-tight leading-snug">Ravi Yadav</h3>
-                  <span className="text-[10px] font-mono text-indigo-100 uppercase tracking-widest block font-bold">Premium Member</span>
+              ) : (
+                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-5 text-white shadow-nordic dark:shadow-none flex items-center justify-between gap-4 relative overflow-hidden">
+                  <div className="absolute top-1/2 right-0 -translate-y-1/2 w-44 h-44 bg-white/10 blur-3xl rounded-full" />
+                  <div className="flex items-center gap-4 z-10">
+                    <div className="w-14 h-14 bg-white/20 border border-white/30 rounded-2xl flex items-center justify-center text-white text-xl font-bold font-mono">
+                      G
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black tracking-tight leading-snug">Guest User</h3>
+                      <span className="text-[10px] font-mono text-indigo-100 uppercase tracking-widest block font-bold">Standard Member</span>
+                    </div>
+                  </div>
+                  <button
+                    id="btn-profile-signin"
+                    type="button"
+                    onClick={() => {
+                      setIsLoginModalOpen(true);
+                      triggerHaptic(20);
+                    }}
+                    className="z-10 px-4 py-2 bg-white text-indigo-600 hover:bg-indigo-50 rounded-2xl text-xs font-black transition-all cursor-pointer shadow-md active:scale-95 shrink-0"
+                  >
+                    Sign In
+                  </button>
+                </div>
+              )}
+
+              {/* Logging Reminders & Notifications Card */}
+              <div id="tab-profile-notifications-card" className="bg-white/75 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/85 p-5 rounded-3xl shadow-subtle dark:shadow-none space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                      <Bell className="w-4.5 h-4.5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-sans font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                        Logging Reminders & Alerts
+                        {notificationsList.some(n => !n.read) && (
+                          <span className="w-2.5 h-2.5 bg-rose-500 rounded-full animate-pulse" />
+                        )}
+                      </h3>
+                    </div>
+                  </div>
+                  {notificationsList.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotificationsList([]);
+                        triggerHaptic(10);
+                      }}
+                      className="text-[10px] uppercase font-mono tracking-tight text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer font-extrabold"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
+
+                {/* Reminders schedule configurator lists */}
+                <div className="space-y-3 pt-1">
+                  <div className="text-[9px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-extrabold block">
+                    Reminders Schedule (Daily)
+                  </div>
+
+                  {/* Nightly Logger Toggle */}
+                  <div className="flex items-center justify-between bg-slate-50/55 dark:bg-slate-800/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-800/60 font-sans">
+                    <div className="text-left flex-1 pr-2">
+                      <span className="block text-[11px] font-extrabold text-slate-750 dark:text-slate-300 leading-tight">Food & Exercise Tracker</span>
+                      <span className="block text-[9px] font-mono tracking-tight text-slate-402 dark:text-slate-500 mt-1">Daily reminder at 11:00 PM</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextState = !isNightlyReminderEnabled;
+                        setIsNightlyReminderEnabled(nextState);
+                        localStorage.setItem('serene_nightly_reminder', nextState ? 'enabled' : 'disabled');
+                        triggerHaptic(12);
+                      }}
+                      className={`w-[42px] h-[24px] rounded-full transition relative shrink-0 ${isNightlyReminderEnabled ? 'bg-indigo-500' : 'bg-slate-200 dark:bg-slate-800'}`}
+                    >
+                      <span className={`absolute top-[2px] w-5 h-5 rounded-full bg-white shadow-sm transition-all ${isNightlyReminderEnabled ? 'right-[2px]' : 'left-[2px]'}`} />
+                    </button>
+                  </div>
+
+                  {/* Sleep morning reminder toggle */}
+                  <div className="flex items-center justify-between bg-slate-50/55 dark:bg-slate-800/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-800/60 font-sans">
+                    <div className="text-left flex-1 pr-2">
+                      <span className="block text-[11px] font-extrabold text-slate-755 dark:text-slate-300 leading-tight">Sleep & Wake Tracker</span>
+                      <span className="block text-[9px] font-mono tracking-tight text-slate-402 dark:text-slate-500 mt-1">Daily reminder at 07:00 AM</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextState = !isMorningReminderEnabled;
+                        setIsMorningReminderEnabled(nextState);
+                        localStorage.setItem('serene_morning_reminder', nextState ? 'enabled' : 'disabled');
+                        triggerHaptic(12);
+                      }}
+                      className={`w-[42px] h-[24px] rounded-full transition relative shrink-0 ${isMorningReminderEnabled ? 'bg-indigo-500' : 'bg-slate-200 dark:bg-slate-800'}`}
+                    >
+                      <span className={`absolute top-[2px] w-5 h-5 rounded-full bg-white shadow-sm transition-all ${isMorningReminderEnabled ? 'right-[2px]' : 'left-[2px]'}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Test simulator panel */}
+                <div className="space-y-2 pt-3 border-t border-slate-101 dark:border-slate-805">
+                  <div className="text-[9px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-extrabold block mb-1">
+                    Run Test Simulator
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        simulateNightlyFired();
+                        triggerHaptic(15);
+                      }}
+                      className="py-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-650 dark:text-indigo-400 text-[10px] font-extrabold rounded-xl text-center cursor-pointer transition"
+                    >
+                      Trigger 11 PM
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        simulateMorningFired();
+                        triggerHaptic(15);
+                      }}
+                      className="py-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-650 dark:text-indigo-400 text-[10px] font-extrabold rounded-xl text-center cursor-pointer transition"
+                    >
+                      Trigger 7 AM
+                    </button>
+                  </div>
+                </div>
+
+                {/* Fired alerts log list */}
+                <div className="space-y-2 pt-3 border-t border-slate-101 dark:border-slate-805 font-sans">
+                  <div className="text-[9px] uppercase font-mono tracking-widest text-slate-400 dark:text-slate-500 font-extrabold block">
+                    Fired Notification Alerts
+                  </div>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1 scrollbar-none">
+                    {notificationsList.length === 0 ? (
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 italic text-center py-3">
+                        No logging alerts fired yet.
+                      </p>
+                    ) : (
+                      notificationsList.map(n => (
+                        <div key={n.id} className="text-left bg-slate-50/70 dark:bg-slate-900/50 p-2.5 rounded-xl text-[10px] leading-tight space-y-0.5 border border-slate-100 dark:border-slate-800/80">
+                          <div className="flex items-center justify-between font-bold">
+                            <span className="text-slate-750 dark:text-slate-300">{n.title}</span>
+                            <span className="text-[8px] font-mono text-slate-404 dark:text-slate-500">{n.time}</span>
+                          </div>
+                          <p className="text-slate-500 dark:text-slate-400 text-[9px] leading-relaxed">{n.text}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
+
               {/* Customizable Goals and Targets Card */}
               <div className="bg-white/75 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/85 p-5 rounded-3xl shadow-subtle dark:shadow-none space-y-4">
                 <div className="flex items-center justify-between">
@@ -1319,7 +1718,7 @@ export default function App() {
 
         </div>
 
-        {/* STICKY BOTTOM TABS SELECTOR BAR - Fits exactly inside smartphone screen, responsive globally */}
+         {/* STICKY BOTTOM TABS SELECTOR BAR - Fits exactly inside smartphone screen, responsive globally */}
         <nav
           id="app-bottom-tab-bar"
           className={`${
@@ -1345,21 +1744,6 @@ export default function App() {
             <span className="text-[10px] tracking-tight">Home</span>
           </button>
 
-          {/* Exercise button */}
-          <button
-            id="tab-btn-exercise"
-            type="button"
-            onClick={() => setActiveAppTab('exercise')}
-            className={`flex flex-col items-center gap-1 text-center transition ${
-              activeAppTab === 'exercise'
-                ? 'text-teal-500 dark:text-teal-400 font-bold scale-105'
-                : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
-            }`}
-          >
-            <Activity className="w-5 h-5 text-slate-405 dark:text-slate-400" />
-            <span className="text-[10px] tracking-tight">Exercise</span>
-          </button>
-
           {/* Food button */}
           <button
             id="tab-btn-food"
@@ -1375,11 +1759,29 @@ export default function App() {
             <span className="text-[10px] tracking-tight">Food</span>
           </button>
 
+          {/* Exercise button */}
+          <button
+            id="tab-btn-exercise"
+            type="button"
+            onClick={() => setActiveAppTab('exercise')}
+            className={`flex flex-col items-center gap-1 text-center transition ${
+              activeAppTab === 'exercise'
+                ? 'text-teal-500 dark:text-teal-400 font-bold scale-105'
+                : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400'
+            }`}
+          >
+            <Activity className="w-5 h-5 text-slate-405 dark:text-slate-400" />
+            <span className="text-[10px] tracking-tight">Exercise</span>
+          </button>
+
           {/* Profile button */}
           <button
             id="tab-btn-profile"
             type="button"
-            onClick={() => setActiveAppTab('profile')}
+            onClick={() => {
+              setActiveAppTab('profile');
+              setNotificationsList(prev => prev.map(n => ({ ...n, read: true })));
+            }}
             className={`flex flex-col items-center gap-1 text-center transition ${
               activeAppTab === 'profile'
                 ? 'text-indigo-500 dark:text-indigo-400 font-bold scale-105'
@@ -1494,6 +1896,164 @@ export default function App() {
                   I'm finished eating today
                 </button>
               </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Google Login popup Modal */}
+        <AnimatePresence>
+          {isLoginModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className={`${
+                isMobilePreviewFrame ? 'absolute' : 'fixed'
+              } inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans`}
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                className="w-full max-w-[360px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden flex flex-col space-y-4 text-center"
+              >
+                <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 to-blue-500" />
+                
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                    <Sparkles className="w-5 h-5 text-indigo-500" />
+                    Google Account
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setIsLoginModalOpen(false)}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-850 text-slate-400 dark:text-slate-500 transition cursor-pointer text-lg font-bold"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed text-center py-1">
+                  Connect your Google Account to unlock high-fidelity high-speed Gemini AI scanning.
+                </p>
+
+                {user ? (
+                  <div className="space-y-3 bg-slate-50 dark:bg-slate-950/40 p-4 border border-slate-100 dark:border-slate-800 rounded-2xl">
+                    <div className="flex items-center gap-3 justify-center">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-500 text-white font-extrabold flex items-center justify-center shrink-0 shadow-sm">
+                        {user.name.split(' ').map((n: string) => n[0]).join('')}
+                      </div>
+                      <div className="text-left font-sans">
+                        <span className="block text-xs font-extrabold text-slate-800 dark:text-slate-200 leading-none">{user.name}</span>
+                        <span className="block text-[10px] text-slate-400 dark:text-slate-500 mt-1">{user.email}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.removeItem('serene_health_user');
+                        setUser(null);
+                        setIsLoginModalOpen(false);
+                        triggerHaptic(15);
+                      }}
+                      className="w-full py-2 bg-red-500/10 hover:bg-red-500/15 text-red-650 dark:text-red-400 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {/* Standard Google sign in simulator buttons */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const guestUser = {
+                          email: 'yadavravi.work@gmail.com',
+                          name: 'Ravi Yadav',
+                          photoURL: ''
+                        };
+                        localStorage.setItem('serene_health_user', JSON.stringify(guestUser));
+                        setUser(guestUser);
+                        setIsLoginModalOpen(false);
+                        triggerHaptic(20);
+                      }}
+                      className="w-full py-2.5 px-4 bg-slate-900 border border-slate-900 hover:bg-slate-850 dark:bg-white dark:border-white dark:hover:bg-slate-100 text-white dark:text-slate-950 rounded-2xl text-xs font-extrabold transition flex items-center justify-center gap-2 shadow cursor-pointer"
+                    >
+                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22-.19-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                      </svg>
+                      Sign In as Ravi Yadav
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const mockUser = {
+                          email: 'guest.explorer@gmail.com',
+                          name: 'Guest Explorer',
+                          photoURL: ''
+                        };
+                        localStorage.setItem('serene_health_user', JSON.stringify(mockUser));
+                        setUser(mockUser);
+                        setIsLoginModalOpen(false);
+                        triggerHaptic(20);
+                      }}
+                      className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs font-extrabold transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22-.19-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                      </svg>
+                      Sign In as Guest
+                    </button>
+                  </div>
+                )}
+                
+                <div className="text-[10px] font-mono text-slate-400 dark:text-slate-500 text-center uppercase tracking-wider">
+                  Secure OAuth Simulated Framework
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Real-time Toast Notifications */}
+        <AnimatePresence>
+          {activeToast && (
+            <motion.div
+              initial={{ opacity: 0, y: -50, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              className={`${
+                isMobilePreviewFrame ? 'absolute' : 'fixed'
+              } top-4 inset-x-4 z-[9999] flex justify-center pointer-events-none font-sans`}
+            >
+              <div className="bg-slate-900/95 dark:bg-white text-white dark:text-slate-900 border border-slate-800 dark:border-slate-100/50 px-4.5 py-3.5 rounded-2xl shadow-2xl flex items-start gap-3 pointer-events-auto max-w-sm">
+                <div className="p-1.5 bg-indigo-500 rounded-xl text-white shrink-0 mt-0.5">
+                  <Bell className="w-4.5 h-4.5 animate-bounce" />
+                </div>
+                <div className="text-left flex-1 font-sans">
+                  <span className="block text-xs font-black tracking-tight leading-none text-indigo-400 dark:text-indigo-650 block mb-1">
+                    {activeToast.title}
+                  </span>
+                  <p className="text-[11px] font-bold opacity-90 leading-snug">
+                    {activeToast.text}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveToast(null)}
+                  className="text-slate-400 hover:text-white dark:text-slate-500 dark:hover:text-slate-800 text-sm font-bold pl-1 shrink-0 cursor-pointer"
+                >
+                  &times;
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

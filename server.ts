@@ -47,7 +47,7 @@ Ensure you find or calculate the parameters PER serving (or per 100g if serving 
 5. carbsGrams: Total carbohydrates in grams per serving.
 6. fatGrams: Total fat in grams per serving.
 7. sodiumMg: Sodium in milligrams (mg) per serving. Return 0 if not listed.
-8. potassiumMg: Potassium in milligrams (mg) per serving. Return 0 if not listed.
+8. cholesterolMg: Cholesterol in milligrams (mg) per serving. Return 0 if not listed.
 9. fiberGrams: Dietary fiber in grams per serving. Return 0 if not listed.
 10. sugarGrams: Total sugar in grams per serving. Return 0 if not listed.
 
@@ -78,7 +78,7 @@ Only return a clean JSON object containing these keys. Do not return markdown wr
               carbsGrams: { type: Type.NUMBER },
               fatGrams: { type: Type.NUMBER },
               sodiumMg: { type: Type.NUMBER },
-              potassiumMg: { type: Type.NUMBER },
+              cholesterolMg: { type: Type.NUMBER },
               fiberGrams: { type: Type.NUMBER },
               sugarGrams: { type: Type.NUMBER },
             },
